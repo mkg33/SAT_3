@@ -328,6 +328,48 @@ void MaphSAT::pureLiteral() {
     }
 }
 
+// VSIDS branching heuristic: too slow for now
+int MaphSAT::selectVSIDS() {
+    int maxLit = 0;
+
+    std::sort(VSIDSvec.begin(), VSIDSvec.end()); //this is problematic but I don't know how to remove duplicates more efficiently
+    auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
+    VSIDSvec.erase(pairs, VSIDSvec.end());
+    std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
+        return pair1.second > pair2.second; //sort by value in descending order
+    });
+
+    for (size_t i = 0; i < VSIDSvec.size(); ++i) {
+        auto it = std::find_if(trail.begin(), trail.end(), [&](const auto & lit) { //check that the literal is not in the trail
+            return lit.first == VSIDSvec[i].first || lit.first == -VSIDSvec[i].first;
+        });
+        if (it == trail.end()) { //pick the literal with the highest value
+            maxLit = VSIDSvec[i].first;
+        }
+        if (maxLit != 0 && VSIDScounter != 75) {
+            break;
+        }
+        else if (VSIDScounter == 75) { // decay by 5%
+            VSIDSvec[i].second *= 0.95;
+        }
+    }
+
+    if (VSIDScounter == 75) {
+        VSIDScounter = 0;
+    }
+
+    #ifdef DEBUG
+    std::cout << "\nmaxLit: " << maxLit << '\n';
+    #endif
+
+    if (maxLit > 0) {
+        return maxLit;
+    }
+    else {
+        return -maxLit;
+    }
+}
+
 // Assert a literal as a decision literal or as a non-decision literal.
 void MaphSAT::assertLiteral(int literal, bool decision) {
     trail.emplace_back(literal, decision);
@@ -368,6 +410,9 @@ void MaphSAT::applyDecide() {
         break;
     case MaphSAT::Heuristic::RMOMS:
         literal = selectMOMS(true);
+        break;
+    case MaphSAT::Heuristic::VSIDS:
+        literal = selectVSIDS();
         break;
     }
 
@@ -553,6 +598,13 @@ void MaphSAT::notifyWatches(int literal) {
             backjumpClause.clear();
             for (int literal : clause)
                 backjumpClause.push_back(literal);
+                for (size_t i = 0; i < VSIDSvec.size(); ++i) {
+                    if (VSIDSvec[i].first == literal) {
+                        ++VSIDSvec[i].second; //update the score
+                        ++VSIDScounter;
+                        break;
+                    }
+                }
         } else if (std::find(unitQueue.begin(), unitQueue.end(), clause[0]) == unitQueue.end()) {
             // If the first watched literal is not falsified, it is a unit literal.
             unitQueue.push_front(clause[0]);
@@ -608,6 +660,7 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic) :
                 break;
             } else if (literal != 0 && std::find(clause.begin(), clause.end(), literal) == clause.end()) {
                 clause.push_back(literal);
+                VSIDSvec.push_back(std::make_pair(literal, 0)); //initialize the VSIDS vector
             }
         }
         if (stream.fail())
@@ -632,7 +685,7 @@ bool MaphSAT::solve() {
         // Assert any unit literals.
         applyUnitPropagate();
         // Eliminate pure literals. It slowed out solver down so we uncommented it.
-        // pureLiteral();
+        //pureLiteral();
         // Do the current assignments lead to a conflict?
         if (conflict) {
             // Can we backtrack to resolve the conflict?
@@ -674,21 +727,23 @@ std::ostream & operator<<(std::ostream & out, const MaphSAT & maph) {
         out << "UNDEF\n";
         break;
     case MaphSAT::State::SAT:
-        out << "s SATISFIABLE\n";
+        //out << "s SATISFIABLE\n";
+        out << "S";
         // to use the runTests.py script, change the output to "SAT"
         break;
     case MaphSAT::State::UNSAT:
-        out << "s UNSATISFIABLE\n";
+        //out << "s UNSATISFIABLE\n";
+        out << "U";
         // to use the runTests.py script, change the output to "UNSAT"
         break;
     }
 
     // to use the runTests.py script, uncomment the following output
-    if (maph.state == MaphSAT::State::SAT) {
+    /*if (maph.state == MaphSAT::State::SAT) {
         out << "v ";
         for (const auto & literal : maph.trail)
             out << literal.first << ' ';
-    }
+    }*/
 
     return out;
 }

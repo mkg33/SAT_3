@@ -23,7 +23,8 @@ public:
         JW,
         RJW,
         MOMS,
-        RMOMS
+        RMOMS,
+        VSIDS
     };
     Heuristic heuristic;
 
@@ -42,6 +43,8 @@ private:
 
     bool conflict;
 
+    int VSIDScounter = 0;
+
     // The formula in CNF format. Each inner vector represents a clause.
     std::vector<std::vector<int> > formula;
 
@@ -58,6 +61,9 @@ private:
     // Literals than can be unit propagated and the clause that forced the propagation.
     std::deque<int> unitQueue;
 
+    // Vector for the VSIDS branching heuristic.
+    std::vector<std::pair<int, double> > VSIDSvec;
+
     // Maps a literal to the clauses that are watching the literal.
     std::unordered_map<int, std::vector<std::size_t> > watchList;
 
@@ -71,6 +77,9 @@ private:
 
     // Elimiate pure literals.
     void pureLiteral();
+
+    // VSIDS branching heuristic
+    int selectVSIDS();
 
     // Assert a literal as a decision literal or as a non-decision literal.
     void assertLiteral(int, bool);
@@ -145,8 +154,6 @@ private:
 
     // Notify clauses that a literal has been asserted.
     void notifyWatches(int);
-
-    //bool pureLiteral();
 
 public:
 

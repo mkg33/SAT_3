@@ -704,12 +704,12 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                     }
                     clause.clear();
                     break;
-
                 }
                 else {
                     #ifdef DEBUG
                     std::cout << "Found duplicate.\n";
                     #endif
+                    clause.clear();
                     break;
                 }
                 /*// Add the clause to the formula.

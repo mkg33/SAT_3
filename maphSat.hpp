@@ -5,6 +5,7 @@
 #include <deque>
 #include <functional>
 #include <iostream>
+#include <fstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -43,6 +44,8 @@ private:
 
     bool conflict;
 
+    bool proofLogging;
+
     int VSIDScounter = 0;
 
     // The formula in CNF format. Each inner vector represents a clause.
@@ -54,6 +57,9 @@ private:
 
     // The variable assignment that lead to a conflict and its opposite.
     std::vector<int> backjumpClause;
+
+    // Clauses for the DRAT-trim verification.
+    std::vector<std::vector<int> > proofClauses;
 
     // Maps a propagated literal to the clause that forced its propagation.
     std::unordered_map<int, std::size_t> reason;
@@ -161,7 +167,7 @@ private:
 public:
 
     // Parse a CNF formula and throw invalid_argument() if unsuccessful.
-    MaphSAT(std::istream &, Heuristic);
+    MaphSAT(std::istream &, Heuristic, bool);
 
     // Solve the CNF formula.
     bool solve();

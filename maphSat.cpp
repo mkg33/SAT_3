@@ -519,9 +519,14 @@ void MaphSAT::applyExplainUIP() {
 // Add a learned clause to the formula to prevent the same conflict from happening again.
 void MaphSAT::applyLearn() {
     formula.push_back(backjumpClause);
+
     // Add the clause to the watch list.
     watchList[backjumpClause[0]].push_back(formula.size() - 1);
     watchList[backjumpClause[1]].push_back(formula.size() - 1);
+
+    if (proofLogging) { // Add the clause to the proof log.
+        proofClauses.push_back(backjumpClause);
+    }
 }
 
 // Return an iterator to the first literal in the trail that has a decision level greater than 'level'.
@@ -638,9 +643,9 @@ void MaphSAT::notifyWatches(int literal) {
 }
 
 // Parse a CNF formula and throw invalid_argument() if unsuccessful.
-MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic) :
+MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proofLogging) :
     heuristic(heuristic), state(MaphSAT::State::UNDEF), numberVariables(0),
-    numberClauses(0), numberDecisions(0), conflict(false) {
+    numberClauses(0), numberDecisions(0), conflict(false), proofLogging(proofLogging) {
     // Skip optional comments and the mandatory 'p cnf' appearing at the top of the CNF formula.
     char c;
     while (stream >> c) {
@@ -728,6 +733,19 @@ bool MaphSAT::solve() {
             else
                 applyDecide();
         }
+    }
+
+    if (proofLogging) { // write proof to file
+        std::ofstream file;
+        file.open("proofLog.txt"); // overwrites existing logs but I don't know if we're required to prevent this;
+        //we could also ask the user to provide the path but I don't know how it performs time-wise in 'non-logger'cases
+        for (const auto & clause : proofClauses) {
+            for (int lit : clause) {
+                file << lit << ' ';
+            }
+            file << "0\n";
+        }
+        file.close();
     }
 
     // If the formula is satisfiable, the trail represents the satisfying assignment.

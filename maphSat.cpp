@@ -674,13 +674,52 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
     for (std::size_t i = 0; i < numberClauses; ++i) {
         while (stream >> literal) {
             if (literal == 0 && clause.size() > 1) {
-                // Add the clause to the formula.
+                // experimental: I tried to remove duplicate clauses and tautologies at the same time
+                auto it = std::find_if(formula.begin(), formula.end(), [&](const auto & formulaClause) {
+                    return clause == formulaClause;
+                });
+                if (it == formula.end()) {
+                    for (int literal : clause) {
+                        auto it = std::find_if(clause.begin(), clause.end(), [&](const auto & lit) { //check that the literal is not in the trail
+                            return lit == -literal;
+                        });
+                        if (it != clause.end()) {
+                            assertLiteral(literal, true);
+                            #ifdef DEBUG
+                            std::cout << "Found tautology in clause: ";
+                            for (int lit : clause) {
+                                std::cout << lit << ' ';
+                            }
+                            std::cout << '\n';
+                            #endif
+                            break;
+                        }
+                        else {
+                            formula.push_back(clause);
+                            watchList[clause[0]].push_back(formula.size() - 1);
+                            watchList[clause[1]].push_back(formula.size() - 1);
+                            clause.clear();
+                            break;
+                        }
+                    }
+                    clause.clear();
+                    break;
+
+                }
+                else {
+                    #ifdef DEBUG
+                    std::cout << "Found duplicate.\n";
+                    #endif
+                    break;
+                }
+                /*// Add the clause to the formula.
                 formula.push_back(clause);
                 // Add the clause to the watch list.
                 watchList[clause[0]].push_back(formula.size() - 1);
                 watchList[clause[1]].push_back(formula.size() - 1);
                 clause.clear();
-                break;
+                break;*/
+
             } else if (literal == 0 && clause.size() == 1) {
                 unitQueue.push_front(clause[0]);
                 clause.clear();
@@ -707,7 +746,7 @@ bool MaphSAT::solve() {
         }
     }
 
-    removeTautologies(); // only in the preprocessing stage
+    //removeTautologies(); // only in the preprocessing stage
 
     // Until the formula is satisfiable or unsatisfiable, the state of the solver is undefined.
     while (state == MaphSAT::State::UNDEF) {

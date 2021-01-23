@@ -10,5 +10,5 @@ TODO:
 * VSIDS / VMTF branching heuristic (M)
 * restarts + phase saving + different restart policies (P)
 * preprocessing techniques (M)
-* proof logging in DRUP (or DRAT) format 
-* tests
+* proof logging in DRUP (or DRAT) format (M)
+* tests (M)

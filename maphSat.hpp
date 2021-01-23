@@ -81,6 +81,9 @@ private:
     // VSIDS branching heuristic
     int selectVSIDS();
 
+    // Remove tautologies from the formula.
+    void removeTautologies();
+
     // Assert a literal as a decision literal or as a non-decision literal.
     void assertLiteral(int, bool);
 

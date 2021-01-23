@@ -370,6 +370,28 @@ int MaphSAT::selectVSIDS() {
     }
 }
 
+// Remove tautolgies from the formula.
+void MaphSAT::removeTautologies() {
+    for (const auto & clause : formula) {
+        for (int literal : clause) {
+            auto it = std::find_if(clause.begin(), clause.end(), [&](const auto & lit) { //check that the literal is not in the trail
+                return lit == -literal;
+            });
+            if (it != clause.end()) {
+                assertLiteral(literal, true);
+                #ifdef DEBUG
+                std::cout << "Found tautology in clause: ";
+                for (int lit : clause) {
+                    std::cout << lit << ' ';
+                }
+                std::cout << '\n';
+                #endif
+                break;
+            }
+        }
+    }
+}
+
 // Assert a literal as a decision literal or as a non-decision literal.
 void MaphSAT::assertLiteral(int literal, bool decision) {
     trail.emplace_back(literal, decision);
@@ -679,6 +701,8 @@ bool MaphSAT::solve() {
         return false;
         }
     }
+
+    removeTautologies(); // only in the preprocessing stage
 
     // Until the formula is satisfiable or unsatisfiable, the state of the solver is undefined.
     while (state == MaphSAT::State::UNDEF) {

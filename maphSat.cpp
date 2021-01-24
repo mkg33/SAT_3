@@ -347,15 +347,15 @@ int MaphSAT::selectVSIDS() {
         if (it == trail.end()) { //pick the literal with the highest value
             maxLit = VSIDSvec[i].first;
         }
-        if (maxLit != 0 && VSIDScounter != 75) {
+        if (maxLit != 0 && VSIDScounter != 50) {
             break;
         }
-        else if (VSIDScounter == 75) { // decay by 5%
-            VSIDSvec[i].second *= 0.95;
+        else if (VSIDScounter == 50) { // decay by 20%
+            VSIDSvec[i].second *= 0.8;
         }
     }
 
-    if (VSIDScounter == 75) { // this value seems to work fine; need to do more research
+    if (VSIDScounter == 50) { // this value seems to work fine; need to do more research
         VSIDScounter = 0;
     }
 

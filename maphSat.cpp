@@ -294,6 +294,9 @@ int MaphSAT::selectMOMS(bool random) const {
 void MaphSAT::pureLiteral() {
     std::vector<int> trackLiterals; // keep track of literals occurring with unique polarity
     std::vector<int> erasedLiterals; // keep track of the erased literals
+    trackLiterals.reserve(numberVariables*2);
+    erasedLiterals.reserve(numberVariables*2);
+
     for (const auto & clause : formula) {
         for (int literal : clause) {
 
@@ -323,28 +326,31 @@ void MaphSAT::pureLiteral() {
     if (!trackLiterals.empty()) {
         for (const auto & lit : trackLiterals) {
             assertLiteral(lit, true);
-            //std::cout << "Pure literal: "<< lit << '\n';
+            #ifdef DEBUG
+            std::cout << "Pure literal: "<< lit << '\n';
+            #endif
         }
         trackLiterals.clear();
+        erasedLiterals.clear();
     }
 }
 
-// VSIDS branching heuristic: too slow for now
+// VSIDS branching heuristic
 int MaphSAT::selectVSIDS() {
     int maxLit = 0;
 
-    std::sort(VSIDSvec.begin(), VSIDSvec.end()); //this is problematic but I don't know how to remove duplicates more efficiently
+    std::sort(VSIDSvec.begin(), VSIDSvec.end());
     auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
     VSIDSvec.erase(pairs, VSIDSvec.end());
     std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
-        return pair1.second > pair2.second; //sort by value in descending order
+        return pair1.second > pair2.second; //sort by score in descending order
     });
 
     for (size_t i = 0; i < VSIDSvec.size(); ++i) {
         auto it = std::find_if(trail.begin(), trail.end(), [&](const auto & lit) { //check that the literal is not in the trail
             return lit.first == VSIDSvec[i].first || lit.first == -VSIDSvec[i].first;
         });
-        if (it == trail.end()) { //pick the literal with the highest value
+        if (it == trail.end()) { //pick the literal with the highest score
             maxLit = VSIDSvec[i].first;
         }
         if (maxLit != 0 && VSIDScounter != 50) {
@@ -355,7 +361,7 @@ int MaphSAT::selectVSIDS() {
         }
     }
 
-    if (VSIDScounter == 50) { // this value seems to work fine; need to do more research
+    if (VSIDScounter == 50) { // this value seems to work fine
         VSIDScounter = 0;
     }
 
@@ -366,7 +372,8 @@ int MaphSAT::selectVSIDS() {
     return maxLit;
 }
 
-// Remove tautolgies from the formula.
+// Remove tautologies from the formula. Right now, it leads to contradiction (in rare cases).
+// We should come back to it once we have proper clause deletion strategies.
 void MaphSAT::removeTautologies() {
     for (const auto & clause : formula) {
         for (int literal : clause) {
@@ -374,15 +381,20 @@ void MaphSAT::removeTautologies() {
                 return lit == -literal;
             });
             if (it != clause.end()) {
-                assertLiteral(literal, true);
-                #ifdef DEBUG
-                std::cout << "Found tautology in clause: ";
-                for (int lit : clause) {
-                    std::cout << lit << ' ';
+                auto trailIt = std::find_if(trail.begin(), trail.end(), [&](const auto & lit){
+                    return lit.first == -literal;
+                });
+                if (trailIt == trail.end()) {
+                    assertLiteral(literal, true);
+                    std::cout << "Asserted " << literal << '\n';
+                    #ifdef DEBUG
+                    std::cout << "Found tautology in clause: ";
+                    for (int lit : clause) {
+                        std::cout << lit << ' ';
+                    }
+                    std::cout << '\n';
+                    #endif
                 }
-                std::cout << '\n';
-                #endif
-                break;
             }
         }
     }
@@ -664,6 +676,7 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
     // Reserve memory for the clauses and the trail.
     formula.reserve(numberClauses);
     trail.reserve(numberVariables);
+    VSIDSvec.reserve(numberVariables*2); //don't know if it makes sense to reserve more space than most likely needed (?)
 
     // Parse all clauses.
     int literal;
@@ -675,13 +688,13 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                 #ifdef DEBUG
                 bool subsumed = false;
                 #endif
-                // experimental: I tried to remove duplicate clauses, (backward) subsumed clauses, and tautologies at the same time
+                // experimental: I tried to remove duplicate clauses and (backward)-subsumed clauses at the same time
                 auto it = std::find_if(formula.begin(), formula.end(), [&](const auto & formulaClause) {
-                    if (clause == formulaClause) {
+                    if (clause == formulaClause) { // check for duplicates
                         return true;
                     }
 
-                    for (int lit : clause) {
+                    for (int lit : clause) { // check for subsumption
                         if (std::find(formulaClause.begin(), formulaClause.end(), lit) == formulaClause.end()) {
                             return false;
                         }
@@ -693,38 +706,19 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                     return true;
                 });
                 if (it == formula.end()) {
+                    formula.push_back(clause);
+                    watchList[clause[0]].push_back(formula.size() - 1);
+                    watchList[clause[1]].push_back(formula.size() - 1);
                     for (int literal : clause) {
-                        auto it = std::find_if(clause.begin(), clause.end(), [&](const auto & lit) { //check that the literal is not in the trail
-                            return lit == -literal;
-                        });
-                        if (it != clause.end()) {
-                            assertLiteral(literal, true);
-
-                            #ifdef DEBUG
-                            std::cout << "Found tautology in clause: ";
-                            for (int lit : clause) {
-                                std::cout << lit << ' ';
-                            }
-                            std::cout << '\n';
-                            #endif
-                            clause.clear();
-                            break;
-                        }
-                        else {
-                            formula.push_back(clause);
-                            watchList[clause[0]].push_back(formula.size() - 1);
-                            watchList[clause[1]].push_back(formula.size() - 1);
-                            for (int literal : clause) {
-                                VSIDSvec.push_back(std::make_pair(literal, 0)); //initialize the VSIDS vector
-                            }
-                            clause.clear();
-                            break;
-                        }
+                        VSIDSvec.push_back(std::make_pair(literal, 0)); //initialize the VSIDS vector
                     }
                     clause.clear();
                     break;
                 }
                 else {
+                    clause.clear(); // don't insert the clause if duplicate/subsumption case
+                    break;
+
                     #ifdef DEBUG
                     if (subsumed) {
                         std::cout << "Found subsumed clause: ";
@@ -737,17 +731,7 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                     }
                     std::cout << '\n';
                     #endif
-                    clause.clear();
-                    break;
                 }
-                /*// Add the clause to the formula.
-                formula.push_back(clause);
-                // Add the clause to the watch list.
-                watchList[clause[0]].push_back(formula.size() - 1);
-                watchList[clause[1]].push_back(formula.size() - 1);
-                clause.clear();
-                break;*/
-
             } else if (literal == 0 && clause.size() == 1) {
                 unitQueue.push_front(clause[0]);
                 clause.clear();
@@ -773,7 +757,7 @@ bool MaphSAT::solve() {
         }
     }
 
-    //removeTautologies(); // only in the preprocessing stage -> now done during reading stream
+    //removeTautologies(); // only in the preprocessing stage; doesn't work for now
 
     applyUnitPropagate(); // before we can apply pureLiteral(), we have to call applyUnitPropagate() [cf. the case with unit.cnf if this line is uncommented]
     pureLiteral(); // eliminate pure literals only in the preprocessing stage [considerable speedup]

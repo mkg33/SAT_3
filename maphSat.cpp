@@ -354,7 +354,7 @@ int MaphSAT::selectVSIDS() {
         }
     }
 
-    if (VSIDScounter == 75) {
+    if (VSIDScounter == 75) { // this value seems to work fine; need to do more research
         VSIDScounter = 0;
     }
 
@@ -362,12 +362,7 @@ int MaphSAT::selectVSIDS() {
     std::cout << "\nmaxLit: " << maxLit << '\n';
     #endif
 
-    if (maxLit > 0) {
-        return maxLit;
-    }
-    else {
-        return -maxLit;
-    }
+    return maxLit;
 }
 
 // Remove tautolgies from the formula.
@@ -674,9 +669,26 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
     for (std::size_t i = 0; i < numberClauses; ++i) {
         while (stream >> literal) {
             if (literal == 0 && clause.size() > 1) {
-                // experimental: I tried to remove duplicate clauses and tautologies at the same time
+                std::sort(clause.begin(), clause.end());
+                #ifdef DEBUG
+                bool subsumed = false;
+                #endif
+                // experimental: I tried to remove duplicate clauses, (backward) subsumed clauses, and tautologies at the same time
                 auto it = std::find_if(formula.begin(), formula.end(), [&](const auto & formulaClause) {
-                    return clause == formulaClause;
+                    if (clause == formulaClause) {
+                        return true;
+                    }
+
+                    for (int lit : clause) {
+                        if (std::find(formulaClause.begin(), formulaClause.end(), lit) == formulaClause.end()) {
+                            return false;
+                        }
+                    }
+                    #ifdef DEBUG
+                    subsumed = true;
+                    #endif
+
+                    return true;
                 });
                 if (it == formula.end()) {
                     for (int literal : clause) {
@@ -707,7 +719,16 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                 }
                 else {
                     #ifdef DEBUG
-                    std::cout << "Found duplicate.\n";
+                    if (subsumed) {
+                        std::cout << "Found subsumed clause: ";
+                    }
+                    else {
+                    std::cout << "Found duplicate: ";
+                    }
+                    for (int lit : clause) {
+                        std::cout << lit << ' ';
+                    }
+                    std::cout << '\n';
                     #endif
                     clause.clear();
                     break;

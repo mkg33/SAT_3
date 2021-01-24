@@ -304,14 +304,14 @@ void MaphSAT::pureLiteral() {
                 auto it = std::find_if(trackLiterals.begin(), trackLiterals.end(), [&](const auto & lit) {
                     return lit == -literal;
                 });
-                auto duplicate = std::find_if(trackLiterals.begin(), trackLiterals.end(), [&](const auto & lit) {
-                    return lit == literal;
-                });
                 auto erased = std::find_if(erasedLiterals.begin(), erasedLiterals.end(), [&](const auto & lit) {
                     return lit == literal || lit == -literal;
                 });
-                if (it == trackLiterals.end() && duplicate == trackLiterals.end() && erased == erasedLiterals.end()) {
+                if (it == trackLiterals.end() && erased == erasedLiterals.end()) {
                     trackLiterals.push_back(literal);
+                    std::sort(trackLiterals.begin(), trackLiterals.end());
+                    auto pairs = unique(trackLiterals.begin(), trackLiterals.end()); // this seems to be faster than erase(unique ...); tested w.r.t. CPU time
+                    trackLiterals.erase(pairs, trackLiterals.end());
                 }
                 else if (it != trackLiterals.end()) {
                     erasedLiterals.push_back(literal);
@@ -323,6 +323,7 @@ void MaphSAT::pureLiteral() {
     if (!trackLiterals.empty()) {
         for (const auto & lit : trackLiterals) {
             assertLiteral(lit, true);
+            //std::cout << "Pure literal: "<< lit << '\n';
         }
         trackLiterals.clear();
     }
@@ -501,7 +502,8 @@ void MaphSAT::applyExplain(int literal) {
     backjumpClause.erase(std::remove(backjumpClause.begin(), backjumpClause.end(), literal), backjumpClause.end());
     backjumpClause.erase(std::remove(backjumpClause.begin(), backjumpClause.end(), -literal), backjumpClause.end());
     std::sort(backjumpClause.begin(), backjumpClause.end());
-    backjumpClause.erase(std::unique(backjumpClause.begin(), backjumpClause.end()), backjumpClause.end());
+    auto pairs = unique(backjumpClause.begin(), backjumpClause.end());
+    backjumpClause.erase(pairs, backjumpClause.end());
 }
 
 // Construct the backjump clause by repeatedly explaining a literal that lead to a

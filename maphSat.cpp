@@ -697,6 +697,7 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                         });
                         if (it != clause.end()) {
                             assertLiteral(literal, true);
+
                             #ifdef DEBUG
                             std::cout << "Found tautology in clause: ";
                             for (int lit : clause) {
@@ -704,12 +705,16 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                             }
                             std::cout << '\n';
                             #endif
+                            clause.clear();
                             break;
                         }
                         else {
                             formula.push_back(clause);
                             watchList[clause[0]].push_back(formula.size() - 1);
                             watchList[clause[1]].push_back(formula.size() - 1);
+                            for (int literal : clause) {
+                                VSIDSvec.push_back(std::make_pair(literal, 0)); //initialize the VSIDS vector
+                            }
                             clause.clear();
                             break;
                         }
@@ -747,7 +752,6 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                 break;
             } else if (literal != 0 && std::find(clause.begin(), clause.end(), literal) == clause.end()) {
                 clause.push_back(literal);
-                VSIDSvec.push_back(std::make_pair(literal, 0)); //initialize the VSIDS vector
             }
         }
         if (stream.fail())
@@ -767,14 +771,15 @@ bool MaphSAT::solve() {
         }
     }
 
-    //removeTautologies(); // only in the preprocessing stage
+    //removeTautologies(); // only in the preprocessing stage -> now done during reading stream
+
+    applyUnitPropagate(); // before we can apply pureLiteral(), we have to call applyUnitPropagate() [cf. the case with unit.cnf if this line is uncommented]
+    pureLiteral(); // eliminate pure literals only in the preprocessing stage [considerable speedup]
 
     // Until the formula is satisfiable or unsatisfiable, the state of the solver is undefined.
     while (state == MaphSAT::State::UNDEF) {
         // Assert any unit literals.
         applyUnitPropagate();
-        // Eliminate pure literals. It slowed out solver down so we uncommented it.
-        //pureLiteral();
         // Do the current assignments lead to a conflict?
         if (conflict) {
             // Can we backtrack to resolve the conflict?

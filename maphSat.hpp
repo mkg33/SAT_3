@@ -46,7 +46,11 @@ private:
 
     bool proofLogging;
 
+    double decay = 0.8; // VSIDS decay factor
+
     int VSIDSinterval = 0; // the regular interval for decay; incremented with every conflict (reset at 50)
+
+    int VSIDScounter = 0; // count backjumps to decrement the decay factor at regular intervals
 
     // The formula in CNF format. Each inner vector represents a clause.
     std::vector<std::vector<int> > formula;

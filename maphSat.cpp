@@ -356,13 +356,14 @@ int MaphSAT::selectVSIDS() {
         if (maxLit != 0 && VSIDSinterval != 50) {
             break;
         }
-        else if (VSIDSinterval == 50) { // decay by 20%
-            VSIDSvec[i].second *= 0.8;
+        else if (VSIDSinterval == 50) { // decay by 20% (initially)
+            if (VSIDScounter >= 2000 && decay > 0) { // update the decay factor periodically; similar technique implemented in Glucose
+                VSIDScounter = 0;
+                decay -= 0.15; // decrement the decay factor
+            }
+           VSIDSvec[i].second *= decay;
+           VSIDSinterval = 0;
         }
-    }
-
-    if (VSIDSinterval == 50) { // this value seems to work fine
-        VSIDSinterval = 0;
     }
 
     #ifdef DEBUG
@@ -585,6 +586,7 @@ void MaphSAT::applyBackjump() {
     unitQueue.clear();
     unitQueue.push_front(-literal);
     reason[-literal] = formula.size() - 1;
+    VSIDScounter++;
 }
 
  // Notify clauses that a literal has been asserted.

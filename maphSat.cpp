@@ -335,6 +335,44 @@ void MaphSAT::pureLiteral() {
     }
 }
 
+// Update the rewards of each literal.
+void MaphSAT::updateCHB() {
+    double reward = 0;
+    for (size_t i = 0; i < CHBvec.size(); i++) {
+        reward = (multiplier) / (numberConflicts - std::get<1>(CHBvec[i]) + 1);
+        std::get<2>(CHBvec[i]) = (1 - alpha) * std::get<2>(CHBvec[i]) + alpha * reward;
+    }
+}
+
+// CHB branching heuristic - supposed to be faster than VSIDS but, apparently, my implementation is painfully slow
+int MaphSAT::selectCHB() {
+    int maxLit = 0;
+
+    double reward = 0;
+    for (size_t i = 0; i < CHBvec.size(); i++) {
+        reward = (multiplier) / (numberConflicts - std::get<1>(CHBvec[i]) + 1);
+        std::get<2>(CHBvec[i]) = (1 - alpha) * std::get<2>(CHBvec[i]) + alpha * reward;
+    }
+
+    std::sort(CHBvec.begin(), CHBvec.end());
+    auto pairs = unique(CHBvec.begin(), CHBvec.end());
+    CHBvec.erase(pairs, CHBvec.end());
+    std::sort(CHBvec.begin(), CHBvec.end(), [](auto &tuple1, auto &tuple2) {
+        return std::get<2>(tuple1) > std::get<2>(tuple2); //sort by score in descending order
+    });
+
+    for (size_t i = 0; i < CHBvec.size(); i++) {
+        auto it = std::find_if(trail.begin(), trail.end(), [&](const auto & lit) { //check that the literal is not in the trail
+            return lit.first == std::get<0>(CHBvec[i]) || lit.first == -std::get<0>(CHBvec[i]);
+        });
+        if (it == trail.end()) { //pick the literal with the highest score
+            maxLit = std::get<0>(CHBvec[i]);
+            break;
+        }
+    }
+    return maxLit;
+}
+
 // VSIDS branching heuristic
 int MaphSAT::selectVSIDS() {
     int maxLit = 0;
@@ -356,18 +394,22 @@ int MaphSAT::selectVSIDS() {
         if (maxLit != 0 && VSIDSinterval != 50) {
             break;
         }
-        else if (VSIDSinterval == 50) { // decay by 20%
-            VSIDSvec[i].second *= 0.8;
+        else if (VSIDSinterval == 50) { // decay by 20% (initially)
+            if (VSIDScounter >= 2000 && decay > 0) { // update the decay factor periodically; similar technique implemented in Glucose
+                VSIDScounter = 0;
+                decay -= 0.15; // decrement the decay factor
+            }
+            //std::cout << "Decaying\n";
+            VSIDSvec[i].second *= decay;
+            VSIDSinterval = 0;
         }
-    }
-
-    if (VSIDSinterval == 50) { // this value seems to work fine
-        VSIDSinterval = 0;
     }
 
     #ifdef DEBUG
     std::cout << "\nmaxLit: " << maxLit << '\n';
     #endif
+
+    //VSIDScounter++;
 
     return maxLit;
 }
@@ -442,7 +484,8 @@ void MaphSAT::applyDecide() {
         literal = selectMOMS(true);
         break;
     case MaphSAT::Heuristic::VSIDS:
-        literal = selectVSIDS();
+        //literal = selectVSIDS();
+        literal = selectCHB();
         break;
     }
 
@@ -585,6 +628,7 @@ void MaphSAT::applyBackjump() {
     unitQueue.clear();
     unitQueue.push_front(-literal);
     reason[-literal] = formula.size() - 1;
+    VSIDScounter++;
 }
 
  // Notify clauses that a literal has been asserted.
@@ -631,16 +675,25 @@ void MaphSAT::notifyWatches(int literal) {
         newWL.push_back(clauseIndex);
         if (std::find_if(trail.begin(), trail.end(), [&clause](const auto & p) { return p.first == -clause[0]; }) != trail.end()) {
             conflict = true;
+            ++numberConflicts;
+            if (alpha > 0.06) {
+                alpha -= pow(10, -6);
+            }
             backjumpClause.clear();
             for (int literal : clause)
                 backjumpClause.push_back(literal);
-                for (size_t i = 0; i < VSIDSvec.size(); ++i) {
+                for (size_t i = 0; i < CHBvec.size(); ++i) {
+                    if (std::get<0>(CHBvec[i]) == literal) {
+                        std::get<1>(CHBvec[i]) = numberConflicts;
+                    }
+                }
+                /*for (size_t i = 0; i < VSIDSvec.size(); ++i) {
                     if (VSIDSvec[i].first == literal) {
                         ++VSIDSvec[i].second; //update the score
                         ++VSIDSinterval;
                         break;
                     }
-                }
+                }*/
         } else if (std::find(unitQueue.begin(), unitQueue.end(), clause[0]) == unitQueue.end()) {
             // If the first watched literal is not falsified, it is a unit literal.
             unitQueue.push_front(clause[0]);
@@ -676,7 +729,8 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
     // Reserve memory for the clauses and the trail.
     formula.reserve(numberClauses);
     trail.reserve(numberVariables);
-    VSIDSvec.reserve(numberVariables*2); //don't know if it makes sense to reserve more space than most likely needed (?)
+    //VSIDSvec.reserve(numberVariables*2); //don't know if it makes sense to reserve more space than most likely needed (?)
+    CHBvec.reserve(numberVariables*2);
 
     // Parse all clauses.
     int literal;
@@ -709,8 +763,11 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
                     formula.push_back(clause);
                     watchList[clause[0]].push_back(formula.size() - 1);
                     watchList[clause[1]].push_back(formula.size() - 1);
-                    for (int literal : clause) {
+                    /*for (int literal : clause) {
                         VSIDSvec.push_back(std::make_pair(literal, 0)); //initialize the VSIDS vector
+                    }*/
+                    for (int literal : clause) {
+                        CHBvec.push_back(std::make_tuple(literal, 0, 0));
                     }
                     clause.clear();
                     break;
@@ -766,12 +823,14 @@ bool MaphSAT::solve() {
     while (state == MaphSAT::State::UNDEF) {
         // Assert any unit literals.
         applyUnitPropagate();
+        updateCHB();
         // Do the current assignments lead to a conflict?
         if (conflict) {
             // Can we backtrack to resolve the conflict?
             if (numberDecisions == 0)
                 state = MaphSAT::State::UNSAT;
             else {
+                multiplier = 0.1;
                 applyExplainUIP();
                 applyLearn();
                 applyBackjump();
@@ -781,8 +840,10 @@ bool MaphSAT::solve() {
             // Otherwise assign a value to a variable that has no assignment yet.
             if (trail.size() == numberVariables)
                 state = MaphSAT::State::SAT;
-            else
+            else {
+                multiplier = 0.9;
                 applyDecide();
+            }
         }
     }
 

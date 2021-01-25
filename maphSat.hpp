@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <tuple>
 
 class MaphSAT {
 
@@ -46,7 +47,19 @@ private:
 
     bool proofLogging;
 
+    double decay = 0.8;
+
+    int VSIDScounter = 0;
+
     int VSIDSinterval = 0; // the regular interval for decay; incremented with every conflict (reset at 50)
+
+    double multiplier = 0;
+
+    double alpha = 0.4;
+
+    int numberConflicts = 0;
+
+    std::vector<std::tuple<int, int, double> > CHBvec;
 
     // The formula in CNF format. Each inner vector represents a clause.
     std::vector<std::vector<int> > formula;
@@ -83,6 +96,11 @@ private:
 
     // Elimiate pure literals.
     void pureLiteral();
+
+    void updateCHB();
+
+    // CHB branching heuristic: see Exponential Recency Weighted Average Branching Heuristic for SAT Solvers
+    int selectCHB();
 
     // VSIDS branching heuristic
     int selectVSIDS();

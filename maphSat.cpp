@@ -353,16 +353,16 @@ int MaphSAT::selectVSIDS() {
         if (it == trail.end()) { //pick the literal with the highest score
             maxLit = VSIDSvec[i].first;
         }
-        if (maxLit != 0 && VSIDScounter != 50) {
+        if (maxLit != 0 && VSIDSinterval != 50) {
             break;
         }
-        else if (VSIDScounter == 50) { // decay by 20%
+        else if (VSIDSinterval == 50) { // decay by 20%
             VSIDSvec[i].second *= 0.8;
         }
     }
 
-    if (VSIDScounter == 50) { // this value seems to work fine
-        VSIDScounter = 0;
+    if (VSIDSinterval == 50) { // this value seems to work fine
+        VSIDSinterval = 0;
     }
 
     #ifdef DEBUG
@@ -637,7 +637,7 @@ void MaphSAT::notifyWatches(int literal) {
                 for (size_t i = 0; i < VSIDSvec.size(); ++i) {
                     if (VSIDSvec[i].first == literal) {
                         ++VSIDSvec[i].second; //update the score
-                        ++VSIDScounter;
+                        ++VSIDSinterval;
                         break;
                     }
                 }

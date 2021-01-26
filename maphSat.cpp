@@ -353,17 +353,20 @@ int MaphSAT::selectVSIDS() {
         if (it == trail.end()) { //pick the literal with the highest score
             maxLit = VSIDSvec[i].first;
         }
-        if (maxLit != 0 && VSIDSinterval != 50) {
+        if (maxLit != 0 && VSIDSinterval != 256) {
             break;
         }
-        else if (VSIDSinterval == 50) { // decay by 20% (initially)
+        else if (VSIDSinterval == 256) { // decay by 20% (initially)
             if (VSIDScounter >= 2000 && decay > 0) { // update the decay factor periodically; similar technique implemented in Glucose
                 VSIDScounter = 0;
                 decay -= 0.15; // decrement the decay factor
             }
            VSIDSvec[i].second *= decay;
-           VSIDSinterval = 0;
         }
+    }
+
+    if (VSIDSinterval == 256) { // interval used in GRASP
+        VSIDSinterval = 0;
     }
 
     #ifdef DEBUG
@@ -766,6 +769,7 @@ bool MaphSAT::solve() {
 
     // Until the formula is satisfiable or unsatisfiable, the state of the solver is undefined.
     while (state == MaphSAT::State::UNDEF) {
+
         // Assert any unit literals.
         applyUnitPropagate();
         // Do the current assignments lead to a conflict?

@@ -52,6 +52,8 @@ private:
 
     int VSIDScounter = 0; // count backjumps to decrement the decay factor at regular intervals
 
+    int numberConflicts = 0;
+
     // The formula in CNF format. Each inner vector represents a clause.
     std::vector<std::vector<int> > formula;
 
@@ -87,6 +89,9 @@ private:
 
     // Elimiate pure literals.
     void pureLiteral();
+
+    // EVSIDS branching heuristic
+    int selectEVSIDS();
 
     // VSIDS branching heuristic
     int selectVSIDS();

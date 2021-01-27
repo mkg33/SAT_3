@@ -335,9 +335,60 @@ void MaphSAT::pureLiteral() {
     }
 }
 
+// EVSIDS branching heuristic
+int MaphSAT::selectEVSIDS() {
+    int maxLit = 0;
+
+    if (!backjumpClause.empty()) {
+        for (const int literal : backjumpClause) {
+            for (size_t j = 0; j < VSIDSvec.size(); ++j) {
+                if (VSIDSvec[j].first == literal) {
+                    VSIDSvec[j].second += pow(1/0.2, numberConflicts); // EVSIDS
+                    break;
+                }
+            }
+        }
+    }
+
+    std::sort(VSIDSvec.begin(), VSIDSvec.end());
+    auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
+    VSIDSvec.erase(pairs, VSIDSvec.end());
+    std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
+        return pair1.second > pair2.second; //sort by score in descending order
+    });
+
+    for (size_t i = 0; i < VSIDSvec.size(); ++i) {
+        auto it = std::find_if(trail.begin(), trail.end(), [&](const auto & lit) { //check that the literal is not in the trail
+            return lit.first == VSIDSvec[i].first || lit.first == -VSIDSvec[i].first;
+        });
+        if (it == trail.end()) { //pick the literal with the highest score
+            maxLit = VSIDSvec[i].first;
+            break;
+        }
+    }
+
+    #ifdef DEBUG
+    std::cout << "\nmaxLit: " << maxLit << '\n';
+    #endif
+
+    return maxLit;
+}
+
 // VSIDS branching heuristic
 int MaphSAT::selectVSIDS() {
     int maxLit = 0;
+
+    if (!backjumpClause.empty()) {
+        for (const int literal : backjumpClause) {
+            for (size_t j = 0; j < VSIDSvec.size(); ++j) {
+                if (VSIDSvec[j].first == literal) {
+                    ++VSIDSvec[j].second;
+                    ++VSIDSinterval;
+                    break;
+                }
+            }
+        }
+    }
 
     std::sort(VSIDSvec.begin(), VSIDSvec.end());
     auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
@@ -362,7 +413,7 @@ int MaphSAT::selectVSIDS() {
                 decay -= 0.15; // decrement the decay factor
             }
            VSIDSvec[i].second *= decay;
-        }
+       }
     }
 
     if (VSIDSinterval == 256) { // interval used in GRASP
@@ -636,16 +687,28 @@ void MaphSAT::notifyWatches(int literal) {
         newWL.push_back(clauseIndex);
         if (std::find_if(trail.begin(), trail.end(), [&clause](const auto & p) { return p.first == -clause[0]; }) != trail.end()) {
             conflict = true;
+            ++numberConflicts;
             backjumpClause.clear();
-            for (int literal : clause)
+            for (const int literal : clause) {
                 backjumpClause.push_back(literal);
-                for (size_t i = 0; i < VSIDSvec.size(); ++i) {
-                    if (VSIDSvec[i].first == literal) {
-                        ++VSIDSvec[i].second; //update the score
-                        ++VSIDSinterval;
+            }
+            /*for (size_t i = 0; i < clause.size(); ++i) {
+                backjumpClause.push_back(clause[i]);
+                for (size_t j = 0; j < VSIDSvec.size(); ++j) {
+                    if (VSIDSvec[j].first == clause[i]) {
+                        VSIDSvec[j].second += pow(1/0.2, numberConflicts); // EVSIDS
+                        //++VSIDSvec[j].second; //update the score
+                        //++VSIDSinterval;
+                        if (i == clause.size() - 1) { // weighted EVSIDS variant
+                            VSIDSvec[j].second  += 0.5*pow(1/0.2, numberConflicts);
+                        }
+                        else {
+                            VSIDSvec[j].second += (1-((i+1)/pow(10, 4)))*pow(1/0.2, numberConflicts);
+                        }
                         break;
                     }
                 }
+            }*/
         } else if (std::find(unitQueue.begin(), unitQueue.end(), clause[0]) == unitQueue.end()) {
             // If the first watched literal is not falsified, it is a unit literal.
             unitQueue.push_front(clause[0]);

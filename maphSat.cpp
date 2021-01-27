@@ -339,11 +339,27 @@ void MaphSAT::pureLiteral() {
 int MaphSAT::selectEVSIDS() {
     int maxLit = 0;
 
-    if (!backjumpClause.empty()) {
+    /*if (!backjumpClause.empty()) {
         for (const int literal : backjumpClause) {
+            for (size_t i = 0; i < VSIDSvec.size(); ++i) {
+                if (VSIDSvec[i].first == literal) {
+                    VSIDSvec[i].second += pow(1/0.2, numberConflicts); // EVSIDS
+                    break;
+                }
+            }
+        }
+    }*/
+
+    if (!backjumpClause.empty()) {
+        for (size_t i = 0; i < backjumpClause.size(); ++i) {
             for (size_t j = 0; j < VSIDSvec.size(); ++j) {
-                if (VSIDSvec[j].first == literal) {
-                    VSIDSvec[j].second += pow(1/0.2, numberConflicts); // EVSIDS
+                if (VSIDSvec[j].first == backjumpClause[i]) {
+                    if (i == backjumpClause.size() - 1) { // weighted EVSIDS variant
+                        VSIDSvec[j].second  += 0.5*pow(1/0.2, numberConflicts);
+                    }
+                    else {
+                        VSIDSvec[j].second += (1-((i+1)/pow(10, 4)))*pow(1/0.2, numberConflicts);
+                    }
                     break;
                 }
             }
@@ -378,7 +394,7 @@ int MaphSAT::selectEVSIDS() {
 int MaphSAT::selectVSIDS() {
     int maxLit = 0;
 
-    if (!backjumpClause.empty()) {
+    if (!backjumpClause.empty()) { // this is faster than updating the scores when creating the backjumpClause
         for (const int literal : backjumpClause) {
             for (size_t j = 0; j < VSIDSvec.size(); ++j) {
                 if (VSIDSvec[j].first == literal) {
@@ -497,7 +513,7 @@ void MaphSAT::applyDecide() {
         literal = selectMOMS(true);
         break;
     case MaphSAT::Heuristic::VSIDS:
-        literal = selectVSIDS();
+        literal = selectEVSIDS();
         break;
     }
 
@@ -689,26 +705,8 @@ void MaphSAT::notifyWatches(int literal) {
             conflict = true;
             ++numberConflicts;
             backjumpClause.clear();
-            for (const int literal : clause) {
+            for (const int literal : clause)
                 backjumpClause.push_back(literal);
-            }
-            /*for (size_t i = 0; i < clause.size(); ++i) {
-                backjumpClause.push_back(clause[i]);
-                for (size_t j = 0; j < VSIDSvec.size(); ++j) {
-                    if (VSIDSvec[j].first == clause[i]) {
-                        VSIDSvec[j].second += pow(1/0.2, numberConflicts); // EVSIDS
-                        //++VSIDSvec[j].second; //update the score
-                        //++VSIDSinterval;
-                        if (i == clause.size() - 1) { // weighted EVSIDS variant
-                            VSIDSvec[j].second  += 0.5*pow(1/0.2, numberConflicts);
-                        }
-                        else {
-                            VSIDSvec[j].second += (1-((i+1)/pow(10, 4)))*pow(1/0.2, numberConflicts);
-                        }
-                        break;
-                    }
-                }
-            }*/
         } else if (std::find(unitQueue.begin(), unitQueue.end(), clause[0]) == unitQueue.end()) {
             // If the first watched literal is not falsified, it is a unit literal.
             unitQueue.push_front(clause[0]);

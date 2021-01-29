@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <tuple>
 
 class MaphSAT {
 
@@ -43,6 +44,12 @@ private:
     std::size_t numberDecisions;
 
     bool conflict;
+
+    int restartLimit = 32; // used in restart policies
+
+    int numberRestarts = 0; // used for computing Luby's sequence
+
+    int restartConflicts = 0; // counter used in restart policies
 
     bool proofLogging;
 
@@ -172,6 +179,35 @@ private:
 
     // Notify clauses that a literal has been asserted.
     void notifyWatches(int);
+
+    // A geometric policy used in MiniSat v1.14.
+    // Initial restart interval: 100 conflicts.
+    // Increase: factor of 1.5 after each restart.
+    void restartPolicy100();
+
+    // Fixed-restart interval policy.
+    // Examples of popular restart intervals:
+    // Restart interval used in Chaff II: 700 conflicts.
+    // Restart interval used in BerkMin: 550 conflicts.
+    // Restart interval used in Siege: 16000 conflicts.
+    void fixedRestart(int);
+
+    /* Computes Luby's sequence: 1,1,2,1,1,2,4,1,1,2,1,1,2,4,8,...
+       Recursive definition:
+       if i=2ˆk - 1, then t_i=2ˆ(k-1),
+       if 2ˆ(k-1) <= i < 2ˆk - 1, then t_i = t_{i-2ˆ(k-1)+1},
+       where i is a positive integer.
+       Takes an index (i).
+       Returns the ith element of the sequence (t_i). */
+    int LubySequence(int);
+
+    // From https://baldur.iti.kit.edu/sat/files/2018/l06.pdf.
+    // My own implementation is below.
+    // Need to measure which is faster.
+    unsigned int Luby(unsigned int);
+
+    // Restart policy based on Luby's sequence.
+    void restartLuby();
 
 public:
 

@@ -350,7 +350,7 @@ int MaphSAT::selectEVSIDS() {
         }
     }*/
 
-    if (!backjumpClause.empty()) {
+    /*if (!backjumpClause.empty()) {
         for (size_t i = 0; i < backjumpClause.size(); ++i) {
             for (size_t j = 0; j < VSIDSvec.size(); ++j) {
                 if (VSIDSvec[j].first == backjumpClause[i]) {
@@ -364,14 +364,7 @@ int MaphSAT::selectEVSIDS() {
                 }
             }
         }
-    }
-
-    std::sort(VSIDSvec.begin(), VSIDSvec.end());
-    auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
-    VSIDSvec.erase(pairs, VSIDSvec.end());
-    std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
-        return pair1.second > pair2.second; //sort by score in descending order
-    });
+    }*/
 
     for (size_t i = 0; i < VSIDSvec.size(); ++i) {
         auto it = std::find_if(trail.begin(), trail.end(), [&](const auto & lit) { //check that the literal is not in the trail
@@ -704,9 +697,30 @@ void MaphSAT::notifyWatches(int literal) {
         if (std::find_if(trail.begin(), trail.end(), [&clause](const auto & p) { return p.first == -clause[0]; }) != trail.end()) {
             conflict = true;
             ++numberConflicts;
+            ++restartConflicts;
             backjumpClause.clear();
-            for (const int literal : clause)
+            for (const int literal : clause) {
                 backjumpClause.push_back(literal);
+            }
+            for (size_t i = 0; i < backjumpClause.size(); ++i) {
+                for (size_t j = 0; j < VSIDSvec.size(); ++j) {
+                    if (VSIDSvec[j].first == backjumpClause[i]) {
+                        if (i == backjumpClause.size() - 1) { // weighted EVSIDS variant
+                            VSIDSvec[j].second  += 0.5*pow(1/0.2, numberConflicts);
+                        }
+                        else {
+                            VSIDSvec[j].second += (1-((i+1)/10000))*pow(1/0.2, numberConflicts);
+                        }
+                        break;
+                    }
+                }
+            }
+            std::sort(VSIDSvec.begin(), VSIDSvec.end());
+            auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
+            VSIDSvec.erase(pairs, VSIDSvec.end());
+            std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
+                return pair1.second > pair2.second; //sort by score in descending order
+            });
         } else if (std::find(unitQueue.begin(), unitQueue.end(), clause[0]) == unitQueue.end()) {
             // If the first watched literal is not falsified, it is a unit literal.
             unitQueue.push_front(clause[0]);
@@ -715,6 +729,89 @@ void MaphSAT::notifyWatches(int literal) {
     }
 
     watchList[literal] = newWL;
+}
+
+// A geometric policy used in MiniSat v1.14.
+// Initial restart interval: 100 conflicts.
+// Increase: factor of 1.5 after each restart.
+// Set restartLimit to 100 in .hpp.
+void MaphSAT::restartPolicy100() {
+    if (restartConflicts >= restartLimit) {
+        restartConflicts = 0;
+        restartLimit *= 1.5;
+        removePast(0);
+    }
+}
+
+// Fixed-restart interval policy.
+void MaphSAT::fixedRestart(int restartInterval) {
+    if (restartConflicts >= restartInterval) {
+        restartConflicts = 0;
+        removePast(0);
+    }
+}
+
+// From https://baldur.iti.kit.edu/sat/files/2018/l06.pdf.
+// My own implementation is below (LubySequence).
+// Need to measure which is faster.
+unsigned int MaphSAT::Luby(unsigned int index) {
+    for (unsigned int k = 1; k < 32; k++) {
+        if (index == (1 << k) - 1) {
+            return 1 << (k-1);
+        }
+    }
+    for (unsigned int k = 1;;k++) {
+        if ((1 << (k-1)) <= index && index < (1 << k) - 1) {
+            return Luby(index-(1 << (k-1)) + 1);
+        }
+    }
+}
+
+/* Computes Luby's sequence: 1,1,2,1,1,2,4,1,1,2,1,1,2,4,8,...
+   Recursive definition:
+   if i=2ˆk - 1, then t_i=2ˆ(k-1),
+   if 2ˆ(k-1) <= i < 2ˆk - 1, then t_i = t_{i-2ˆ(k-1)+1},
+   where i is a positive integer.
+   Takes an index (i).
+   Returns the ith element of the sequence (t_i). */
+int MaphSAT::LubySequence(int index) {
+    int result = 0;
+    double parameter = log2(index+1);
+    /* Because:
+       i = 2ˆparameter - 1
+       2ˆparameter = i + 1
+       parameter = log_2(i+1) */
+
+    if (index == 1) {
+        return 1;
+    }
+    if (floor(parameter) == ceil(parameter)) { // check if it's an integer
+        result = pow(2, parameter-1);
+    }
+    else if (pow(2, floor(parameter)-1) == index) { // check if 2ˆ(floor(parameter)-1)) is an integer
+            result = LubySequence(index - pow(2, floor(parameter)-1) + 1);
+    }
+    else { // it holds that 2ˆ(ceil(parameter-1)) is an integer
+        result = LubySequence(index - pow(2, ceil(parameter)-1) + 1);
+    }
+
+    return result;
+}
+
+// Restart policy based on Luby's sequence.
+// A unit interval is defined as 32 conflicts.
+// The restart intervals are thus: 32, 32, 64, 32, 32, 64, 128...
+// The choice of unit intervals based on:
+// Huang, J. (2007). The effect of restarts on the efficiency of clause learning.
+// Note: unit interval of 512 recommended in https://baldur.iti.kit.edu/sat/files/2018/l06.pdf.
+// MiniSAT uses unit intervals of 100.
+// Set restartLimit=32 in .hpp.
+void MaphSAT::restartLuby() {
+    if (restartConflicts >= restartLimit) {
+        restartConflicts = 0;
+        removePast(0);
+        restartLimit = 32*Luby(++numberRestarts);
+    }
 }
 
 // Parse a CNF formula and throw invalid_argument() if unsuccessful.
@@ -848,8 +945,10 @@ bool MaphSAT::solve() {
             // Otherwise assign a value to a variable that has no assignment yet.
             if (trail.size() == numberVariables)
                 state = MaphSAT::State::SAT;
-            else
+            else {
+                restartLuby();
                 applyDecide();
+            }
         }
     }
 

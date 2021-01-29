@@ -14,7 +14,8 @@ TODO:
 
 * clause deletion strategy (P)
 * VSIDS / VMTF branching heuristic (M) :white_check_mark:
-* restarts + phase saving + different restart policies (P)
+* phase saving (P)
+* restarts + different restart policies (M) :white_check_mark:
 * preprocessing techniques (M) :white_check_mark: [might add more]
 * proof logging in DRUP (or DRAT) format (M) :white_check_mark:
 * tests + cactus plots (M)

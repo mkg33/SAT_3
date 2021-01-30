@@ -137,6 +137,7 @@ int MaphSAT::selectDLIS(bool random) const {
         const int randIndex = getRandomIndex(0, randCandidates.size());
         maxLit = randCandidates[randIndex];
     }
+
     if (maxLit > 0)
         return maxLit;
     else
@@ -392,7 +393,6 @@ int MaphSAT::selectVSIDS() {
             for (size_t j = 0; j < VSIDSvec.size(); ++j) {
                 if (VSIDSvec[j].first == literal) {
                     ++VSIDSvec[j].second;
-                    ++VSIDSinterval;
                     break;
                 }
             }
@@ -697,6 +697,7 @@ void MaphSAT::notifyWatches(int literal) {
         if (std::find_if(trail.begin(), trail.end(), [&clause](const auto & p) { return p.first == -clause[0]; }) != trail.end()) {
             conflict = true;
             ++numberConflicts;
+            ++VSIDSinterval;
             ++restartConflicts;
             backjumpClause.clear();
             for (const int literal : clause) {
@@ -810,7 +811,7 @@ void MaphSAT::restartLuby() {
     if (restartConflicts >= restartLimit) {
         restartConflicts = 0;
         removePast(0);
-        restartLimit = 32*Luby(++numberRestarts);
+        restartLimit = 32*LubySequence(++numberRestarts);
     }
 }
 

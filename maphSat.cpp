@@ -388,24 +388,6 @@ int MaphSAT::selectEVSIDS() {
 int MaphSAT::selectVSIDS() {
     int maxLit = 0;
 
-    if (!backjumpClause.empty()) { // this is faster than updating the scores when creating the backjumpClause
-        for (const int literal : backjumpClause) {
-            for (size_t j = 0; j < VSIDSvec.size(); ++j) {
-                if (VSIDSvec[j].first == literal) {
-                    ++VSIDSvec[j].second;
-                    break;
-                }
-            }
-        }
-    }
-
-    std::sort(VSIDSvec.begin(), VSIDSvec.end());
-    auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
-    VSIDSvec.erase(pairs, VSIDSvec.end());
-    std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
-        return pair1.second > pair2.second; //sort by score in descending order
-    });
-
     for (size_t i = 0; i < VSIDSvec.size(); ++i) {
         auto it = std::find_if(trail.begin(), trail.end(), [&](const auto & lit) { //check that the literal is not in the trail
             return lit.first == VSIDSvec[i].first || lit.first == -VSIDSvec[i].first;
@@ -698,7 +680,6 @@ void MaphSAT::notifyWatches(int literal) {
             conflict = true;
             ++numberConflicts;
             ++VSIDSinterval;
-            ++restartConflicts;
             backjumpClause.clear();
             for (const int literal : clause) {
                 backjumpClause.push_back(literal);
@@ -706,12 +687,14 @@ void MaphSAT::notifyWatches(int literal) {
             for (size_t i = 0; i < backjumpClause.size(); ++i) {
                 for (size_t j = 0; j < VSIDSvec.size(); ++j) {
                     if (VSIDSvec[j].first == backjumpClause[i]) {
-                        if (i == backjumpClause.size() - 1) { // weighted EVSIDS variant
+                        VSIDSvec[j].second++;
+
+                        /*if (i == backjumpClause.size() - 1) { // weighted EVSIDS variant
                             VSIDSvec[j].second  += 0.5*pow(1/0.2, numberConflicts);
                         }
                         else {
                             VSIDSvec[j].second += (1-((i+1)/10000))*pow(1/0.2, numberConflicts);
-                        }
+                        }*/
                         break;
                     }
                 }
@@ -737,8 +720,8 @@ void MaphSAT::notifyWatches(int literal) {
 // Increase: factor of 1.5 after each restart.
 // Set restartLimit to 100 in .hpp.
 void MaphSAT::restartPolicy100() {
-    if (restartConflicts >= restartLimit) {
-        restartConflicts = 0;
+    if (numberConflicts >= restartLimit) {
+        numberConflicts = 0;
         restartLimit *= 1.5;
         removePast(0);
     }
@@ -746,8 +729,8 @@ void MaphSAT::restartPolicy100() {
 
 // Fixed-restart interval policy.
 void MaphSAT::fixedRestart(int restartInterval) {
-    if (restartConflicts >= restartInterval) {
-        restartConflicts = 0;
+    if (numberConflicts >= restartInterval) {
+        numberConflicts = 0;
         removePast(0);
     }
 }
@@ -808,10 +791,11 @@ int MaphSAT::LubySequence(int index) {
 // MiniSAT uses unit intervals of 100.
 // Set restartLimit=32 in .hpp.
 void MaphSAT::restartLuby() {
-    if (restartConflicts >= restartLimit) {
-        restartConflicts = 0;
+    if (numberConflicts >= restartLimit) {
+        numberConflicts = 0;
         removePast(0);
-        restartLimit = 32*LubySequence(++numberRestarts);
+        restartLimit = 8*LubySequence(++numberRestarts);
+        numberConflicts = 0;
     }
 }
 

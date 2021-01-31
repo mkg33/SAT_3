@@ -45,13 +45,9 @@ private:
 
     bool conflict;
 
-    int restartLimit = 32; // used in restart policies
+    int restartLimit = 64; // used in restart policies
 
     int numberRestarts = 0; // used for computing Luby's sequence
-
-    int restartConflicts = 0; // counter used in restart policies
-
-    bool proofLogging;
 
     double decay = 0.8; // VSIDS decay factor
 
@@ -59,7 +55,9 @@ private:
 
     int VSIDScounter = 0; // count backjumps to decrement the decay factor at regular intervals
 
-    int numberConflicts = 0;
+    int numberConflicts = 0; // counter used in restart policies
+
+    bool proofLogging;
 
     // The formula in CNF format. Each inner vector represents a clause.
     std::vector<std::vector<int> > formula;

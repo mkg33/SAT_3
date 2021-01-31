@@ -215,6 +215,11 @@ public:
     // Solve the CNF formula.
     bool solve();
 
+    // Verifier used to check satisfiable cases.
+    // Checks that every clause contains a literal that is true in the assignment trail.
+    // Returns true if the variable assignment is correct, false otherwise.
+    bool verify();
+
     // Print the current state of the SAT solver.
     friend std::ostream & operator<<(std::ostream &, const MaphSAT &);
 

@@ -928,8 +928,18 @@ bool MaphSAT::solve() {
         } else {
             // Does every variable have an assignment? If that is the case, we are done.
             // Otherwise assign a value to a variable that has no assignment yet.
-            if (trail.size() == numberVariables)
+            if (trail.size() == numberVariables) {
                 state = MaphSAT::State::SAT;
+
+                #ifdef DEBUG
+                if (verify()) {
+                    std::cout << "\nVerifier: OK\n";
+                }
+                else {
+                    std::cout << "\nVerifier: FAIL\n";
+                }
+                #endif
+            }
             else {
                 restartLuby();
                 applyDecide();
@@ -962,6 +972,30 @@ bool MaphSAT::solve() {
     }
 
     return false;
+}
+
+// Verifier used to check satisfiable cases.
+// Checks that every clause contains a literal that is true in the assignment trail.
+// Returns true if the variable assignment is correct, false otherwise.
+bool MaphSAT::verify() {
+    bool clauseValid; // flag for checking the validity of every clause
+
+    for (auto const & clause : formula) {
+        clauseValid = false; // reset the flag for the next clause
+        for (auto const literal : clause) {
+            auto it = std::find_if(trail.begin(), trail.end(), [literal] (const auto & lit) {
+                return literal == lit.first;
+            });
+            if (it != trail.end()) {
+                clauseValid = true;
+                break;
+            }
+        }
+        if (!clauseValid){
+            return false;
+        }
+    }
+    return true;
 }
 
 // Print the current state of the SAT solver.

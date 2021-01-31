@@ -13,7 +13,7 @@ void printError(char * prog) {
 ██║ ╚═╝ ██║██║  ██║██║     ██║  ██║███████║╚██████╔╝███████╗ ╚████╔╝ ███████╗██║  ██║
 ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝
 )"  << "\nUsage: " << prog << " <DIMACS file>" << " selection heuristic:\n <FIRST=0 | RANDOM=1 | DLIS=2 | RDLIS=3 | DLCS=4 | RDLCS=5 | JW=6 | RJW=7 | MOMS=8 | RMOMS=9 | VSIDS=10>"
-    << " optional DRAT proof logging: <Y|N>\n\n"
+    << " optional DRAT proof logging: <Y>\n\n"
     << "Available selection heuristics: \n" << "- FIRST: select the first available literal\n"
     << "- RANDOM: select a random literal\n" << "- DLIS: Dynamic Largest Individual Sum\n" << "- RDLIS: randomized Dynamic Largest Individual Sum\n"
     << "- DLCS: Dynamic Largest Combined Sum\n" << "- RDLCS: randomized Dynamic Largest Combined Sum\n" << "- JW: Jeroslow-Wang heuristic\n"
@@ -30,9 +30,6 @@ int main(int argc, char ** argv) {
     else if (argc == 4) {
         if (argv[3][0] == 'Y' || argv[3][0] == 'y') {
             proofLogging = true;
-        }
-        else if (argv[3][0] == 'N' || argv[3][0] == 'n') {
-            proofLogging = false;
         }
         else {
             printError(argv[0]);

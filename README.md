@@ -4,6 +4,15 @@ Project 3
 
 Deadline: 15.03.2021 (2:00 PM)
 
+**UPDATE (31.01)**
+
+ALl tests pass well within the time limit (current version). Turns out that the VSIDS heuristic works just fine (provided there are restarts with the right parameters).
+
+EVSIDS also works but the conflictsNumber counter needs to be reset with every
+restart. I thought the counter was supposed to be incremented irrespective of
+restarts. Anyway, I'm glad this version works. Now we can consolidate our updates
+and get even better results. I suppose from now on it's just stress-free work :-).
+
 **UPDATE (24.01)**
 
 As of today, our solver can solve almost all test cases well within the 1m CPU time limit. There's only one timeout (hole9.cnf). All tests performed with VSIDS.

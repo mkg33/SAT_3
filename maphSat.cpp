@@ -1,7 +1,6 @@
 // The solver is largely based on the following paper: http://poincare.matf.bg.ac.rs/~filip//phd/sat-tutorial.pdf
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <random>
 
 #include "maphSat.hpp"
@@ -51,7 +50,17 @@ void MaphSAT::pureLiteral() {
     }
 }
 
-// EVSIDS branching heuristic
+// Helper for sorting the VSIDSvec
+void MaphSAT::sortVSIDSvec() {
+    std::sort(VSIDSvec.begin(), VSIDSvec.end()); // sort only when updating scores
+    auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
+    VSIDSvec.erase(pairs, VSIDSvec.end());
+    std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
+        return pair1.second > pair2.second; //sort by score in descending order
+    });
+}
+
+// EVSIDS branching heuristic.
 int MaphSAT::selectEVSIDS() {
     int maxLit = 0;
 
@@ -144,17 +153,19 @@ void MaphSAT::assertLiteral(int literal, bool decision) {
 void MaphSAT::applyDecide() {
     int literal = 0;
 
-    switch (heuristic) {
+    literal = selectVSIDS();
+
+    /*switch (heuristic) {
     case MaphSAT::Heuristic::VSIDS:
         literal = selectVSIDS();
         break;
     case MaphSAT::Heuristic::EVSIDS:
-        literal = selectEVSIDS();
+        literal = selectEVSIDS(false);
         break;
     case MaphSAT::Heuristic::WEVSIDS:
-        // this variant will be available within EVSIDS()
+        literal = selectEVSIDS(true);
         break;
-    }
+    }*/
 
     if (literal == 0)
         return;
@@ -345,42 +356,38 @@ void MaphSAT::notifyWatches(int literal) {
             ++numberConflicts;
             ++VSIDSinterval;
             backjumpClause.clear();
+
             for (const int literal : clause) {
                 backjumpClause.push_back(literal);
-            }
-            for (size_t i = 0; i < backjumpClause.size(); ++i) {
                 for (size_t j = 0; j < VSIDSvec.size(); ++j) {
-                    if (VSIDSvec[j].first == backjumpClause[i]) {
-                        VSIDSvec[j].second++; // we need a conditional here for VSIDS vs EVSIDS (if we want to keep both - I think it's good for benchmarking)
-
-                        /*if (VSIDSvec[i].first == literal) {
-                            VSIDSvec[i].second += pow(1/0.2, numberConflicts); // EVSIDS
-                            break;
-                        }*/
-
-                        /*if (i == backjumpClause.size() - 1) { // weighted EVSIDS variant
-                            VSIDSvec[j].second  += 0.5*pow(1/0.2, numberConflicts);
-                        }
-                        else {
-                            VSIDSvec[j].second += (1-((i+1)/10000))*pow(1/0.2, numberConflicts);
-                        }*/
+                    if (VSIDSvec[j].first == literal) {
+                        ++VSIDSvec[j].second;
+                        // VSIDSvec[j].second += pow(1/0.2, numberConflicts); EVSIDS
                         break;
                     }
                 }
             }
-            std::sort(VSIDSvec.begin(), VSIDSvec.end());
-            auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
-            VSIDSvec.erase(pairs, VSIDSvec.end());
-            std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
-                return pair1.second > pair2.second; //sort by score in descending order
-            });
+            // switch is too slow here
+            /*for (size_t i = 0; i < backjumpClause.size(); ++i) { // weighted EVSIDS
+                for (size_t j = 0; j < VSIDSvec.size(); ++j) {
+                    if (VSIDSvec[j].first == backjumpClause[i]) {
+                        if (i == backjumpClause.size() - 1) {
+                            VSIDSvec[j].second  += 0.5*pow(1/0.2, numberConflicts);
+                        }
+                        else {
+                            VSIDSvec[j].second += (1-((i+1)/10000))*pow(1/0.2, numberConflicts);
+                        }
+                        break;
+                    }
+                }
+            }*/
+            sortVSIDSvec();
         } else if (std::find(unitQueue.begin(), unitQueue.end(), clause[0]) == unitQueue.end()) {
             // If the first watched literal is not falsified, it is a unit literal.
             unitQueue.push_front(clause[0]);
             reason[clause[0]] = clauseIndex;
         }
     }
-
     watchList[literal] = newWL;
 }
 

@@ -17,8 +17,7 @@ public:
 
     enum class Heuristic {
         VSIDS,
-        EVSIDS,
-        WEVSIDS // will have to accommodate this variant within the EVSIDS function
+        EVSIDS
     };
     Heuristic heuristic;
 
@@ -81,10 +80,13 @@ private:
     // Elimiate pure literals.
     void pureLiteral();
 
-    // EVSIDS branching heuristic
+    // Helper for sorting the VSIDSvec.
+    void sortVSIDSvec();
+
+    // EVSIDS branching heuristic.
     int selectEVSIDS();
 
-    // VSIDS branching heuristic
+    // VSIDS branching heuristic.
     int selectVSIDS();
 
     // Remove tautologies from the formula.

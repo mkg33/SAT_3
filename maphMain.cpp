@@ -14,11 +14,14 @@ void printError(char * prog) {
 ██║╚██╔╝██║██╔══██║██╔═══╝ ██╔══██║╚════██║██║   ██║██║     ╚██╗ ██╔╝██╔══╝  ██╔══██╗
 ██║ ╚═╝ ██║██║  ██║██║     ██║  ██║███████║╚██████╔╝███████╗ ╚████╔╝ ███████╗██║  ██║
 ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝
-)"  << "\nUsage: " << prog << " <DIMACS file>" << " selection heuristic:\n <VSIDS=0 | EVSIDS=1 | WEVSIDS=2>"
+)"  << "\nUsage: " << prog << " <DIMACS file>" << " selection heuristic:\n <VSIDS=0 | EVSIDS=1>"
     << " optional DRAT proof logging: <Y>\n\n"
     << "Available selection heuristics:\n" << "- VSIDS: Variable State Independent Decaying Sum\n"
     << "- EVSIDS: Exponential Variable State Independent Decaying Sum\n"
     << "- WEVSIDS: Weighted Exponential Variable State Independent Decaying Sum\n";
+    // I suggest we git rid of the choice of heuristics (switching between cases is too slow when updating scores).
+    // I also think we should leave them in code and allow the user to comment them out to check that they really work.
+    // We should also use all three heuristics for overlaying cactus plots.
 }
 
 int main(int argc, char ** argv) {
@@ -42,7 +45,7 @@ int main(int argc, char ** argv) {
     std::ifstream stream(argv[1]);
     const int heuristic = atoi(argv[2]);
 
-    if (stream.fail() || heuristic < 0 || heuristic > 2) {
+    if (stream.fail() || heuristic < 0 || heuristic > 1) {
         printError(argv[0]);
         return 1;
     }

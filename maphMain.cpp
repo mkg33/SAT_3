@@ -14,13 +14,11 @@ void printError(char * prog) {
 ██║╚██╔╝██║██╔══██║██╔═══╝ ██╔══██║╚════██║██║   ██║██║     ╚██╗ ██╔╝██╔══╝  ██╔══██╗
 ██║ ╚═╝ ██║██║  ██║██║     ██║  ██║███████║╚██████╔╝███████╗ ╚████╔╝ ███████╗██║  ██║
 ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝
-)"  << "\nUsage: " << prog << " <DIMACS file>" << " selection heuristic:\n <FIRST=0 | RANDOM=1 | DLIS=2 | RDLIS=3 | DLCS=4 | RDLCS=5 | JW=6 | RJW=7 | MOMS=8 | RMOMS=9 | VSIDS=10>"
+)"  << "\nUsage: " << prog << " <DIMACS file>" << " selection heuristic:\n <VSIDS=0 | EVSIDS=1 | WEVSIDS=2>"
     << " optional DRAT proof logging: <Y>\n\n"
-    << "Available selection heuristics: \n" << "- FIRST: select the first available literal\n"
-    << "- RANDOM: select a random literal\n" << "- DLIS: Dynamic Largest Individual Sum\n" << "- RDLIS: randomized Dynamic Largest Individual Sum\n"
-    << "- DLCS: Dynamic Largest Combined Sum\n" << "- RDLCS: randomized Dynamic Largest Combined Sum\n" << "- JW: Jeroslow-Wang heuristic\n"
-    << "- RJW: randomized Jeroslow-Wang heuristic\n" << "- MOMS: Maximum [number of] Occurrences in Minimum [length] Clauses\n"
-    << "- RMOMS: randomized Maximum [number of] Occurrences in Minimum [length] Clauses\n";
+    << "Available selection heuristics:\n" << "- VSIDS: Variable State Independent Decaying Sum\n"
+    << "- EVSIDS: Exponential Variable State Independent Decaying Sum\n"
+    << "- WEVSIDS: Weighted Exponential Variable State Independent Decaying Sum\n";
 }
 
 int main(int argc, char ** argv) {
@@ -44,7 +42,7 @@ int main(int argc, char ** argv) {
     std::ifstream stream(argv[1]);
     const int heuristic = atoi(argv[2]);
 
-    if (stream.fail() || heuristic < 0 || heuristic > 10) {
+    if (stream.fail() || heuristic < 0 || heuristic > 2) {
         printError(argv[0]);
         return 1;
     }

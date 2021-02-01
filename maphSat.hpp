@@ -16,17 +16,9 @@ class MaphSAT {
 public:
 
     enum class Heuristic {
-        FIRST,
-        RANDOM,
-        DLIS,
-        RDLIS,
-        DLCS,
-        RDLCS,
-        JW,
-        RJW,
-        MOMS,
-        RMOMS,
-        VSIDS
+        VSIDS,
+        EVSIDS,
+        WEVSIDS // will have to accommodate this variant within the EVSIDS function
     };
     Heuristic heuristic;
 
@@ -80,19 +72,11 @@ private:
     // Literals than can be unit propagated and the clause that forced the propagation.
     std::deque<int> unitQueue;
 
-    // Vector for the VSIDS branching heuristic.
+    // Vector for the (E)VSIDS branching heuristic.
     std::vector<std::pair<int, double> > VSIDSvec;
 
     // Maps a literal to the clauses that are watching the literal.
     std::unordered_map<int, std::vector<std::size_t> > watchList;
-
-    void combinedSum(std::vector<std::pair<int, int> > &, std::vector<std::pair<int, int> > &, bool, std::size_t) const;
-    int selectFirst() const;
-    int selectRandom() const;
-    int selectDLIS(bool) const;
-    int selectDLCS(bool) const;
-    int selectJW(bool) const;
-    int selectMOMS(bool) const;
 
     // Elimiate pure literals.
     void pureLiteral();

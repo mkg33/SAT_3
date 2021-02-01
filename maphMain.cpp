@@ -4,6 +4,8 @@
 
 #include "maphSat.hpp"
 
+namespace fs = std::__fs::filesystem;
+
 void printError(char * prog) {
     std::cerr << R"(
 ███╗   ███╗ █████╗ ██████╗ ██╗  ██╗███████╗ ██████╗ ██╗     ██╗   ██╗███████╗██████╗
@@ -23,6 +25,8 @@ void printError(char * prog) {
 
 int main(int argc, char ** argv) {
     bool proofLogging = false;
+    std::string proofName = "";
+
     if (argc < 3) {
         printError(argv[0]);
         return 1;
@@ -30,6 +34,7 @@ int main(int argc, char ** argv) {
     else if (argc == 4) {
         if (argv[3][0] == 'Y' || argv[3][0] == 'y') {
             proofLogging = true;
+            proofName = fs::path(argv[1]).filename();
         }
         else {
             printError(argv[0]);
@@ -44,7 +49,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    MaphSAT solver(stream, static_cast<MaphSAT::Heuristic>(heuristic), proofLogging);
+    MaphSAT solver(stream, static_cast<MaphSAT::Heuristic>(heuristic), proofLogging, proofName);
 
     solver.solve();
     std::cout << solver;

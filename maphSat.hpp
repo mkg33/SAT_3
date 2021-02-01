@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <tuple>
+#include <filesystem>
 
 class MaphSAT {
 
@@ -58,6 +58,8 @@ private:
     int numberConflicts = 0; // counter used in restart policies
 
     bool proofLogging;
+
+    std::string proofName; // filename of .cnf input used in proof logging
 
     // The formula in CNF format. Each inner vector represents a clause.
     std::vector<std::vector<int> > formula;
@@ -210,7 +212,7 @@ private:
 public:
 
     // Parse a CNF formula and throw invalid_argument() if unsuccessful.
-    MaphSAT(std::istream &, Heuristic, bool);
+    MaphSAT(std::istream &, Heuristic, bool, std::string);
 
     // Solve the CNF formula.
     bool solve();

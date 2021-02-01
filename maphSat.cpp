@@ -800,9 +800,9 @@ void MaphSAT::restartLuby() {
 }
 
 // Parse a CNF formula and throw invalid_argument() if unsuccessful.
-MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proofLogging) :
+MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proofLogging, std::string proofName) :
     heuristic(heuristic), state(MaphSAT::State::UNDEF), numberVariables(0),
-    numberClauses(0), numberDecisions(0), conflict(false), proofLogging(proofLogging) {
+    numberClauses(0), numberDecisions(0), conflict(false), proofLogging(proofLogging), proofName(proofName) {
     // Skip optional comments and the mandatory 'p cnf' appearing at the top of the CNF formula.
     char c;
     while (stream >> c) {
@@ -949,8 +949,7 @@ bool MaphSAT::solve() {
 
     if (proofLogging) { // write proof to file
         std::ofstream file;
-        file.open("proofLog.txt"); // overwrites existing logs but I don't know if we're required to prevent this;
-        //we could also ask the user to provide the path but I don't know how it performs time-wise in 'non-logger'cases
+        file.open(proofName + "_proofLog.txt");
         for (const auto & clause : proofClauses) {
             for (int lit : clause) {
                 file << lit << ' ';

@@ -695,13 +695,13 @@ std::ostream & operator<<(std::ostream & out, const MaphSAT & maph) {
         out << "UNDEF\n";
         break;
     case MaphSAT::State::SAT:
-        //out << "s SATISFIABLE\n";
-        out << "S";
+        out << "s SATISFIABLE\n";
+        //out << "S";
         // to use the runTests.py script, change the output to "SAT"
         break;
     case MaphSAT::State::UNSAT:
-        //out << "s UNSATISFIABLE\n";
-        out << "U";
+        out << "s UNSATISFIABLE\n";
+        //out << "U";
         // to use the runTests.py script, change the output to "UNSAT"
         break;
     }
@@ -711,6 +711,7 @@ std::ostream & operator<<(std::ostream & out, const MaphSAT & maph) {
         out << "v ";
         for (const auto & literal : maph.trail)
             out << literal.first << ' ';
+        out << "0\n";
     }
 
     return out;

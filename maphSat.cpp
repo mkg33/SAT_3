@@ -50,7 +50,7 @@ void MaphSAT::pureLiteral() {
     }
 }
 
-// Helper for sorting the VSIDSvec
+// Helper for sorting the VSIDSvec.
 void MaphSAT::sortVSIDSvec() {
     std::sort(VSIDSvec.begin(), VSIDSvec.end()); // sort only when updating scores
     auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
@@ -104,7 +104,7 @@ int MaphSAT::selectVSIDS() {
        }
     }
 
-    if (VSIDSinterval == 256) { // interval used in GRASP
+    if (VSIDSinterval >= 256) { // interval used in GRASP
         VSIDSinterval = 0;
     }
 
@@ -153,7 +153,7 @@ void MaphSAT::assertLiteral(int literal, bool decision) {
 void MaphSAT::applyDecide() {
     int literal = 0;
 
-    literal = selectVSIDS();
+    literal = selectEVSIDS();
 
     /*switch (heuristic) {
     case MaphSAT::Heuristic::VSIDS:
@@ -359,29 +359,27 @@ void MaphSAT::notifyWatches(int literal) {
 
             for (const int literal : clause) {
                 backjumpClause.push_back(literal);
-                for (size_t j = 0; j < VSIDSvec.size(); ++j) {
-                    if (VSIDSvec[j].first == literal) {
-                        ++VSIDSvec[j].second;
-                        // VSIDSvec[j].second += pow(1/0.2, numberConflicts); EVSIDS
-                        break;
-                    }
-                }
+                auto it = std::find_if(VSIDSvec.begin(), VSIDSvec.end(), [&](const auto & lit){
+                    return lit.first == literal;
+                });
+                ++it->second;
             }
             // switch is too slow here
             /*for (size_t i = 0; i < backjumpClause.size(); ++i) { // weighted EVSIDS
                 for (size_t j = 0; j < VSIDSvec.size(); ++j) {
                     if (VSIDSvec[j].first == backjumpClause[i]) {
+                        //++VSIDSvec[j].second;
                         if (i == backjumpClause.size() - 1) {
-                            VSIDSvec[j].second  += 0.5*pow(1/0.2, numberConflicts);
+                            VSIDSvec[j].second += 0.5*pow(5, numberConflicts);
                         }
                         else {
-                            VSIDSvec[j].second += (1-((i+1)/10000))*pow(1/0.2, numberConflicts);
+                            VSIDSvec[j].second += (1-((i+1)/10000))*pow(5, numberConflicts);
                         }
                         break;
                     }
                 }
             }*/
-            sortVSIDSvec();
+            sortVSIDSvec(); // sort only when updating scores
         } else if (std::find(unitQueue.begin(), unitQueue.end(), clause[0]) == unitQueue.end()) {
             // If the first watched literal is not falsified, it is a unit literal.
             unitQueue.push_front(clause[0]);
@@ -468,7 +466,6 @@ int MaphSAT::LubySequence(int index) {
 // Set restartLimit=32 in .hpp.
 void MaphSAT::restartLuby() {
     if (numberConflicts >= restartLimit) {
-        numberConflicts = 0;
         removePast(0);
         restartLimit = 8*LubySequence(++numberRestarts);
         numberConflicts = 0;
@@ -566,6 +563,24 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proof
         }
         if (stream.fail())
             throw std::invalid_argument("Error parsing DIMACS.");
+    }
+    /* If there are any variables that don't appear in the formula (but are
+       specified in the 'numberVariables' argument), put them in the trail.
+       Default assignment: true.
+     */
+    auto maxPair = *std::max_element(VSIDSvec.begin(), VSIDSvec.end(),
+                      [](const std::pair<int, double> &pair1, const std::pair<int, double> &pair2) {
+                         return abs(pair1.first) > abs(pair2.first);
+                     });
+    int maxQueue = abs(*std::max_element(unitQueue.begin(), unitQueue.end()));
+    int maxVariable = maxPair.first;
+    if (maxQueue > maxVariable) {
+        maxVariable = maxQueue;
+    }
+    if (maxVariable < static_cast<int>(numberVariables)) {
+        for (int i = maxVariable + 1; i <= static_cast<int>(numberVariables); i++) {
+            assertLiteral(i, true);
+        }
     }
 }
 
@@ -692,11 +707,11 @@ std::ostream & operator<<(std::ostream & out, const MaphSAT & maph) {
     }
 
     // to use the runTests.py script, uncomment the following output
-    /*if (maph.state == MaphSAT::State::SAT) {
+    if (maph.state == MaphSAT::State::SAT) {
         out << "v ";
         for (const auto & literal : maph.trail)
             out << literal.first << ' ';
-    }*/
+    }
 
     return out;
 }

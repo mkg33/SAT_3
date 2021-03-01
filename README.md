@@ -4,6 +4,15 @@ Project 3
 
 Deadline: 15.03.2021 (2:00 PM)
 
+**UPDATE(01.03)**
+
+I have an updated version in the file sat3.cpp. It solves all instances in less
+than 6 seconds, without restarts it solves all instances in less than 12
+seconds. I still need to add your UNSAT proof code, MAPHSAT ASCII picture and figure out a way to make
+the scoring algorithm more efficient. I will do that in the coming days.
+You can compile with `g++ -std=c++17 sat3.cpp -Wall -Werror -O3 -DNDEBUG -o
+sat3.out`.
+
 **UPDATE (31.01)**
 
 ALl tests pass well within the time limit (current version). Turns out that the VSIDS heuristic works just fine (provided there are restarts with the right parameters).

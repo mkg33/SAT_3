@@ -6,9 +6,13 @@
 #include <iostream>
 #include <limits>
 #include <set>
+#include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "cxxopts.hpp"
 
 using Literal =  int32_t;   // Literal data type.
 using   CSize = uint32_t;   // Small size data type.
@@ -60,15 +64,21 @@ bool litAbsLessThan(Literal a, Literal b) {
 class SAT {
 public:
 
-    SAT(std::istream &);    // Constructor parses a CNF file.
-    bool solve();           // Solve the SAT problem.
+    enum class RestartPolicy {
+        LUBY,
+        GEOMETRIC,
+        LINEAR
+    };
+
+    SAT(std::istream &, RestartPolicy, double, bool, bool, std::string);   // Constructor parses a CNF file.
+    bool solve();                                                          // Solve the SAT problem.
 
 private:
 
     enum class State {
-        UNDEF,              // No solution yet.
-          SAT,              // Formula is satisfiable.
-        UNSAT               // Formula is unsatisfiable.
+        UNDEF,           // No solution yet.
+          SAT,           // Formula is satisfiable.
+        UNSAT            // Formula is unsatisfiable.
     } state;
 
     struct Statistics {
@@ -92,8 +102,13 @@ private:
             lrnTrs(lrnTrs), lrnFac(lrnFac) {}
     } statistics;
 
-    bool    conflict;    // Conflict flag.
-    Literal lastAss;     // Last asserted literal of the backjump clause.
+    RestartPolicy policy;   // Restart policy.
+    double  restartParam;   // Parameter for the restart policy.
+    bool           phase;   // Enable phase saving?
+    bool           proof;   // Enable proof logging?
+    bool        conflict;   // Conflict flag.
+    Literal      lastAss;   // Last asserted literal of the backjump clause.
+    std::string     file;   // CNF file.
 
     std::vector<Literal>                              literals;   // All literals.
     std::vector<Variable>                            variables;   // All variables.
@@ -106,6 +121,9 @@ private:
     std::deque<Literal>                              unitQueue;   // Queue of literals to be propagated.
     std::unordered_map<Literal, std::vector<Size>>       watch;   // Watch lists.
     std::unordered_map<Literal, Size>                   reason;   // What is the clause that propagated a literal?
+
+    std::unordered_map<Literal, Literal> phaseLiterals;
+    std::vector<Literal> proofClauses;
 
     void addClause(std::vector<Literal> &);                       // Add a clause to the formula.
     void assertLiteral(Literal, bool);                            // Add a literal as a decision or non-decision literal to the trail.
@@ -127,11 +145,15 @@ private:
     friend std::ostream & operator<<(std::ostream &, SAT &);      // Print the solver state.
 };
 
-// OK
-SAT::SAT(std::istream & stream) :
+SAT::SAT(std::istream & stream, RestartPolicy policy, double restartParam, bool phase, bool proof, std::string file) :
     state(State::UNDEF),
     statistics(0, 0, 0, 12, 0, 0, 0, 0, 1024, 0, 0.3, 1.1),
-    conflict(false) {
+    policy(policy),
+    restartParam(restartParam),
+    phase(phase),
+    proof(proof),
+    conflict(false),
+    file(file) {
     // Skip optional comments and 'p cnf' appearing at the top of the file.
     char c;
     while (stream >> c) {
@@ -169,9 +191,11 @@ SAT::SAT(std::istream & stream) :
 
     if (stream.fail())
         throw std::invalid_argument("Error while parsing CNF formula.");
+    
+    if (policy == RestartPolicy::LINEAR)
+        statistics.resTrs = restartParam;
 }
 
-// OK
 bool SAT::solve() {
     assertPureLiterals();
     while (state == State::UNDEF) {
@@ -192,10 +216,20 @@ bool SAT::solve() {
             }
         }
     }
+
+    if (state == State::UNSAT && proof) {
+        std::ofstream stream;
+        stream.open(file + "_proofLog.txt");
+        for (Literal literal : proofClauses) {
+            stream << literal << ' ';
+            if (literal == 0) stream << '\n';
+        }
+        stream.close();
+    }
+
     return state == State::SAT;
 }
 
-// OK
 bool SAT::shouldKeep(std::vector<Literal> & clause) {
     // Sort the clause to make preprocessing easier.
     std::sort(clause.begin(), clause.end());
@@ -227,7 +261,6 @@ bool SAT::shouldKeep(std::vector<Literal> & clause) {
     return true;
 }
 
-// OK
 void SAT::addClause(std::vector<Literal> & clause) {
     static Size nextLit = 0;   // Index of the next literal.
     static Size nextCls = 0;   // Index of the next clause.
@@ -261,7 +294,6 @@ void SAT::addClause(std::vector<Literal> & clause) {
     }
 }
 
-// OK
 void SAT::assertLiteral(Literal literal, bool decision) {
     Variable & variable = variables[getIndex(literal)];
     variable.level      = statistics.decNum;
@@ -269,10 +301,12 @@ void SAT::assertLiteral(Literal literal, bool decision) {
     variable.sign       = (literal < 0);
     variable.decision   = decision;
     trail.push_back(literal);
+
+    phaseLiterals[std::abs(literal)] = literal;
+
     notify(-literal);
 }
 
-// OK
 void SAT::assertPureLiterals() {
     // We note for each variable whether it occurs in the positive or negative.
     // If it occurs in only one form, then it can be propagated as a pure literal.
@@ -307,7 +341,6 @@ void SAT::assertPureLiterals() {
     }
 }
 
-// OK
 void SAT::findLastAsserted() {
     for (auto it = trail.rbegin(); it != trail.rend(); ++it) {
         if (backjumpMap.find(-*it) != backjumpMap.end() && backjumpMap[-*it]) {
@@ -317,7 +350,6 @@ void SAT::findLastAsserted() {
     }
 }
 
-// OK
 void SAT::backjumpApply() {
     // Explain literals of the backjump clause until the first UIP condition is satisfied.
     while (statistics.litHgh != 1) {
@@ -361,6 +393,12 @@ void SAT::backjumpApply() {
         else if (size == 3) formula.emplace_back(activity, size, literals.size(), backjump[0], backjump[1], backjump[2]);
         else                formula.emplace_back(activity, size, literals.size(), backjump[0], backjump[1]);
         for (Literal literal : backjump) literals.push_back(literal);
+
+        if (proof) {
+            for (Literal literal : backjump) proofClauses.push_back(literal);
+            proofClauses.push_back(0);
+        }
+
         ++statistics.clsLrn;
     }
 
@@ -370,7 +408,6 @@ void SAT::backjumpApply() {
     prefixTo(level);
 }
 
-// OK
 void SAT::backjumpInit() {
     // Clear the contents of the previous conflict analysis.
     backjumpMap.clear();
@@ -394,19 +431,23 @@ void SAT::backjumpInit() {
     findLastAsserted();
 }
 
-// OK
 void SAT::decide() {
     for (auto it = scores.begin(); it != scores.end(); ++it) {
         const Literal literal = it->first;
         if (!satisfied(literal) && !satisfied(-literal)) {
             ++statistics.decNum;
-            assertLiteral(literal, true);
+            
+            if (phase) {
+                const Literal var = std::abs(literal);
+                if (phaseLiterals.find(var) != phaseLiterals.end()) assertLiteral(phaseLiterals[var], true);
+                else                                                assertLiteral(literal, true);
+            } else assertLiteral(literal, true);
+
             return;
         }
     }
 }
 
-// OK
 void SAT::forget() {
     // Delete 50% of the clauses with the highest activity level.
     double remaining = statistics.clsLrn / 2;
@@ -435,7 +476,6 @@ void SAT::forget() {
     statistics.lrnTrs *= statistics.lrnFac;
 }
 
-// OK
 void SAT::notify(Literal literal) {
     // Check if there is any clause that is watching the literal.
     if (watch.find(literal) == watch.end()) return;
@@ -517,7 +557,6 @@ void SAT::notify(Literal literal) {
     watch[literal] = newWL;
 }
 
-// OK
 void SAT::prefixTo(Size level) {
     // Update variables that are going to be deleted from the trail.
     Size i = trail.size();
@@ -535,7 +574,6 @@ void SAT::prefixTo(Size level) {
     statistics.decNum = level;
 }
 
-// OK
 void SAT::resolve(Literal literal, const Clause & clause) {
     // Delete the literal from the backjump clause.
     backjumpMap[-literal] = false;
@@ -574,12 +612,13 @@ Size lubySeq(Size rest) {
     return lubySeq(rest - std::pow(2, std::ceil(param) - 1) + 1);
 }
 
-// OK
 void SAT::restart() {
     statistics.conRes = 0;
-    statistics.resTrs = 64 * lubySeq(++statistics.resNum);
+    if (policy == RestartPolicy::LUBY)           statistics.resTrs = restartParam * lubySeq(++statistics.resNum);
+    else if (policy == RestartPolicy::GEOMETRIC) statistics.resTrs *= restartParam; // TODO: Check for overflow.
     prefixTo(0);
     reason.clear();
+
     scores.clear();
     for (Size i = 1; i <= statistics.varNum; ++i) {
         scores.emplace(i, 0);
@@ -588,14 +627,12 @@ void SAT::restart() {
     if (statistics.clsLrn > statistics.clsFrm * statistics.lrnTrs) forget();
 }
 
-// OK
 bool SAT::satisfied(Literal literal) {
     if (literal == 0) return false;
     const Variable & variable = variables[getIndex(literal)];
     return variable.trail && variable.sign == (literal < 0);
 }
 
-// OK
 void SAT::subsumeApply() {
     for (Size i = 0; i < backjump.size(); ++i) {
         // Skip decision literals as they have no reason clause.
@@ -634,7 +671,6 @@ void SAT::subsumeApply() {
     }
 }
 
-// OK
 void SAT::unitPropagate() {
     while (!unitQueue.empty() && !conflict) {
         assertLiteral(unitQueue.front(), false);
@@ -642,7 +678,6 @@ void SAT::unitPropagate() {
     }
 }
 
-// OK
 std::ostream & operator<<(std::ostream & out, SAT & sat) {
     switch (sat.state) {
     case SAT::State::UNDEF:
@@ -663,8 +698,7 @@ std::ostream & operator<<(std::ostream & out, SAT & sat) {
     return out;
 }
 
-// OK
-int main(int argc, char ** argv) {
+/*int main(int argc, char ** argv) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <CNF file>\n";
         return 1;
@@ -682,4 +716,81 @@ int main(int argc, char ** argv) {
     else
         std::cout << "UNSAT" << std::endl;
     //std::cout << solver << std::endl;
+}*/
+
+int main(int argc, char ** argv) {
+
+    cxxopts::Options options(argv[0]);
+    options.add_options()
+        ("h,help", "Print usage.")
+        ("f,file", "Specify CNF file.", cxxopts::value<std::string>())
+        ("p,proof", "Enable proof logging.", cxxopts::value<bool>()->default_value("false"))
+        ("s,phase", "Enable phase saving.",  cxxopts::value<bool>()->default_value("false"))
+        ("g,geometric", "Geometric restart policy: The initial restart frequency is 1024 conflicts and is multiplied by 'arg' every restart.",
+            cxxopts::value<double>()->implicit_value("1.2")->default_value("1.2"))
+        ("l,linear", "Linear restart policy: The restart frequency is 'arg' conflicts.",
+            cxxopts::value<double>()->implicit_value("1024")->default_value("1024"))
+        ("y,luby", "Luby's restart policy (default policy): Each value of the luby sequence is multiplied by the factor 'arg'.",
+            cxxopts::value<double>()->implicit_value("64")->default_value("64"));
+
+    try {
+        auto result = options.parse(argc, argv);
+
+        if (result.count("help")) {
+            std::cout << options.help() << std::endl;
+            return 0;
+        }
+
+        if (!result.count("file")) {
+            std::cerr << "Error: No file specified." << std::endl;
+            std::cout << options.help() << std::endl;
+            return 1;
+        }
+
+        const std::string file = result["file"].as<std::string>();
+        const bool proof       = result["proof"].as<bool>();
+        const bool phase       = result["phase"].as<bool>();
+        const bool geometric   = result.count("geometric");
+        const bool linear      = result.count("linear");
+        const bool luby        = result.count("luby");
+        SAT::RestartPolicy policy;
+        double restartParam;
+
+        std::ifstream stream(file);
+        if (stream.fail()) {
+            std::cout << "Error: Could not read file " << file << std::endl;
+            std::cout << options.help() << std::endl;
+            return 1;
+        }
+
+        if (!geometric && !linear && !luby) {
+            policy       = SAT::RestartPolicy::LUBY;
+            restartParam = result["luby"].as<double>();
+        } else if (geometric && !linear && !luby) {
+            policy       = SAT::RestartPolicy::GEOMETRIC;
+            restartParam = result["geometric"].as<double>();
+        } else if (!geometric && linear && !luby) {
+            policy       = SAT::RestartPolicy::LINEAR;
+            restartParam = result["linear"].as<double>();
+        } else if (!geometric && !linear && luby) {
+            policy       = SAT::RestartPolicy::LUBY;
+            restartParam = result["luby"].as<double>();
+        } else {
+            std::cout << options.help() << std::endl;
+            return 1;
+        }
+
+        SAT solver(stream, policy, restartParam, phase, proof, file);
+        if (solver.solve())
+            std::cout << "SAT" << std::endl;
+        else
+            std::cout << "UNSAT" << std::endl;
+        //std::cout << solver << std::endl;
+
+    } catch (cxxopts::OptionException e) {
+        std::cout << options.help() << std::endl;
+        return 1;
+    }
+
+    return 0;
 }

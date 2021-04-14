@@ -5,25 +5,19 @@
 #include <deque>
 #include <functional>
 #include <iostream>
+#include <fstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <filesystem>
 
 class MaphSAT {
 
 public:
 
     enum class Heuristic {
-        FIRST,
-        RANDOM,
-        DLIS,
-        RDLIS,
-        DLCS,
-        RDLCS,
-        JW,
-        RJW,
-        MOMS,
-        RMOMS
+        VSIDS,
+        EVSIDS
     };
     Heuristic heuristic;
 
@@ -42,6 +36,22 @@ private:
 
     bool conflict;
 
+    int restartLimit = 64; // used in restart policies
+
+    int numberRestarts = 0; // used for computing Luby's sequence
+
+    double decay = 0.8; // VSIDS decay factor
+
+    int VSIDSinterval = 0; // the regular interval for decay; incremented with every conflict (reset at 50)
+
+    int VSIDScounter = 0; // count backjumps to decrement the decay factor at regular intervals
+
+    int numberConflicts = 0; // counter used in restart policies
+
+    bool proofLogging;
+
+    std::string proofName; // filename of .cnf input used in proof logging
+
     // The formula in CNF format. Each inner vector represents a clause.
     std::vector<std::vector<int> > formula;
 
@@ -52,25 +62,35 @@ private:
     // The variable assignment that lead to a conflict and its opposite.
     std::vector<int> backjumpClause;
 
+    // Clauses for the DRAT-trim verification.
+    std::vector<std::vector<int> > proofClauses;
+
     // Maps a propagated literal to the clause that forced its propagation.
     std::unordered_map<int, std::size_t> reason;
 
     // Literals than can be unit propagated and the clause that forced the propagation.
     std::deque<int> unitQueue;
 
+    // Vector for the (E)VSIDS branching heuristic.
+    std::vector<std::pair<int, double> > VSIDSvec;
+
     // Maps a literal to the clauses that are watching the literal.
     std::unordered_map<int, std::vector<std::size_t> > watchList;
 
-    void combinedSum(std::vector<std::pair<int, int> > &, std::vector<std::pair<int, int> > &, bool, std::size_t) const;
-    int selectFirst() const;
-    int selectRandom() const;
-    int selectDLIS(bool) const;
-    int selectDLCS(bool) const;
-    int selectJW(bool) const;
-    int selectMOMS(bool) const;
-
     // Elimiate pure literals.
     void pureLiteral();
+
+    // Helper for sorting the VSIDSvec.
+    void sortVSIDSvec();
+
+    // EVSIDS branching heuristic.
+    int selectEVSIDS();
+
+    // VSIDS branching heuristic.
+    int selectVSIDS();
+
+    // Remove tautologies from the formula.
+    void removeTautologies();
 
     // Assert a literal as a decision literal or as a non-decision literal.
     void assertLiteral(int, bool);
@@ -146,15 +166,47 @@ private:
     // Notify clauses that a literal has been asserted.
     void notifyWatches(int);
 
-    //bool pureLiteral();
+    // A geometric policy used in MiniSat v1.14.
+    // Initial restart interval: 100 conflicts.
+    // Increase: factor of 1.5 after each restart.
+    void restartPolicy100();
+
+    // Fixed-restart interval policy.
+    // Examples of popular restart intervals:
+    // Restart interval used in Chaff II: 700 conflicts.
+    // Restart interval used in BerkMin: 550 conflicts.
+    // Restart interval used in Siege: 16000 conflicts.
+    void fixedRestart(int);
+
+    /* Computes Luby's sequence: 1,1,2,1,1,2,4,1,1,2,1,1,2,4,8,...
+       Recursive definition:
+       if i=2ˆk - 1, then t_i=2ˆ(k-1),
+       if 2ˆ(k-1) <= i < 2ˆk - 1, then t_i = t_{i-2ˆ(k-1)+1},
+       where i is a positive integer.
+       Takes an index (i).
+       Returns the ith element of the sequence (t_i). */
+    int LubySequence(int);
+
+    // From https://baldur.iti.kit.edu/sat/files/2018/l06.pdf.
+    // My own implementation is below.
+    // Need to measure which is faster.
+    unsigned int Luby(unsigned int);
+
+    // Restart policy based on Luby's sequence.
+    void restartLuby();
 
 public:
 
     // Parse a CNF formula and throw invalid_argument() if unsuccessful.
-    MaphSAT(std::istream &, Heuristic);
+    MaphSAT(std::istream &, Heuristic, bool, std::string);
 
     // Solve the CNF formula.
     bool solve();
+
+    // Verifier used to check satisfiable cases.
+    // Checks that every clause contains a literal that is true in the assignment trail.
+    // Returns true if the variable assignment is correct, false otherwise.
+    bool verify();
 
     // Print the current state of the SAT solver.
     friend std::ostream & operator<<(std::ostream &, const MaphSAT &);

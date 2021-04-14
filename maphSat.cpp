@@ -1,299 +1,17 @@
 // The solver is largely based on the following paper: http://poincare.matf.bg.ac.rs/~filip//phd/sat-tutorial.pdf
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <random>
 
 #include "maphSat.hpp"
-
-// Helper for random selection heuristics.
-// Takes a lower and upper bound and returns a random index within the bounds.
-// It's mainly used for vectors, therefore the upper bound is decremented.
-int getRandomIndex(int lowerBound, int upperBound) {
-    std::random_device randDevice;
-    std::mt19937 rng(randDevice());
-    std::uniform_int_distribution<int> result(lowerBound,upperBound-1);
-    int randIndex = result(rng);
-    return randIndex;
-}
-
-// Helper for computing the combined sum of occurrences (both polarities).
-// If the first parameter is true, it computes the combined sum for the MOMS heuristic
-// and uses the int to determine the 'cutoffLength' of a clause.
-// If false, it computes the usual combined sum for DLCS.
-void MaphSAT::combinedSum(std::vector<std::pair<int, int> > & pos, std::vector<std::pair<int, int> > & neg, bool constraint, std::size_t cutoffLength) const {
-    int counterPos = 0;
-    int counterNeg = 0;
-    for (const auto & clause : formula){
-        for (int literal : clause) {
-            if (constraint && clause.size() > cutoffLength)
-                break;
-            if (std::find_if(trail.begin(), trail.end(), [literal](const auto & p) { return p.first == literal || p.first == -literal; }) == trail.end()) {
-                auto itPos = std::find_if(pos.begin(), pos.end(), [&counterPos, literal](const auto & p) {
-                    counterPos = p.second;
-                    return p.first == literal || p.first == -literal;
-                });
-                auto itNeg = std::find_if(neg.begin(), neg.end(), [&counterNeg, literal](const auto & p) {
-                    counterNeg = p.second;
-                    return p.first == literal || p.first == -literal;
-                });
-
-                if (literal > 0) {
-                    if (itPos == pos.end() && literal > 0)
-                        pos.emplace_back(std::make_pair(literal, 1));
-                    else {
-                        pos.erase(itPos);
-                        const int newPosCounter = ++counterPos;
-                        pos.emplace_back(literal, newPosCounter);
-                    }
-                } else if (literal < 0) {
-                    if (itNeg == neg.end())
-                        neg.emplace_back(literal, 1);
-                    else {
-                        neg.erase(itNeg);
-                        const int newNegCounter = ++counterNeg;
-                        neg.emplace_back(literal, newNegCounter);
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Select the first literal that is not yet asserted.
-int MaphSAT::selectFirst() const {
-    for (const auto & clause : formula) {
-        for (int literal : clause) {
-            if (std::find_if(trail.begin(), trail.end(), [literal](const auto & p) { return p.first == literal || p.first == -literal; }) == trail.end())
-                return literal;
-        }
-    }
-    return 0;
-}
-
-// Selection heuristic: Pick a random literal.
-int MaphSAT::selectRandom() const {
-    int maxLit = 0;
-    std::vector<int> randCandidates;
-
-    for (const auto & clause : formula) {
-        for (int literal : clause) {
-            if (std::find_if(trail.begin(), trail.end(), [literal](const auto & p) { return p.first == literal || p.first == -literal; }) == trail.end())
-                randCandidates.push_back(literal);
-        }
-    }
-    if (!randCandidates.empty()) {
-        const int randIndex = getRandomIndex(0, randCandidates.size());
-        maxLit = randCandidates[randIndex];
-    }
-    if (maxLit > 0)
-        return maxLit;
-    else
-        return -maxLit;
-}
-
-// Selection heuristic: Dynamic Largest Individual Sum.
-// Picks the literal with the highest number of occurrences in the unsatisfied clauses.
-// Sets value to true if the literal is positive.
-// If the literal is negative, sets the value of its negation to true.
-// If randomized true, it runs the randomized DLIS variant.
-int MaphSAT::selectDLIS(bool random) const {
-    int counter = 0;
-    int maxNumber = 0;
-    int maxLit = 0;
-    std::vector<int> randCandidates;
-    std::vector<std::pair<int, int> > vCount;
-
-    for (const auto & clause : formula) {
-        for (int literal : clause) {
-            if (std::find_if(trail.begin(), trail.end(),
-                [literal](const auto & p) { return p.first == literal || p.first == -literal; }) == trail.end()) {
-                auto it = std::find_if(vCount.begin(), vCount.end(), [&counter, literal](const auto & p) {
-                    counter = p.second;
-                    return p.first == literal || p.first == -literal;
-                });
-                if (it == vCount.end()) {
-                    vCount.emplace_back(literal, 1);
-                    if (maxNumber > 1) {
-                        maxNumber = 1;
-                        maxLit = literal;
-                    } else if (random && maxNumber == 1)
-                        randCandidates.push_back(literal);
-                } else {
-                    vCount.erase(it);
-                    const int newValue = ++counter;
-                    vCount.emplace_back(literal, newValue);
-                    if (newValue > maxNumber) {
-                        maxNumber = newValue;
-                        maxLit = literal;
-                    } else if (random && newValue == maxNumber)
-                        randCandidates.push_back(literal);
-                }
-            }
-        }
-    }
-
-    if (random && !randCandidates.empty()) {
-        const int randIndex = getRandomIndex(0, randCandidates.size());
-        maxLit = randCandidates[randIndex];
-    }
-    if (maxLit > 0)
-        return maxLit;
-    else
-        return -maxLit;
-}
-
-// Selection heuristic: Dynamic Largest Combined Sum.
-// Picks the variable with the highest number of occurrences of its positive and negative literals (combined).
-// If randomized true, it runs the randomized DLCS variant.
-int MaphSAT::selectDLCS(bool random) const {
-    int counterNeg = 0;
-    int maxScore = 0;
-    int maxLit = 0;
-    std::vector<int> randCandidates;
-    std::vector<std::pair<int, int> > posVariableCount;
-    std::vector<std::pair<int, int> > negVariableCount;
-
-    combinedSum(posVariableCount, negVariableCount, false, 0);
-
-    for (auto & posLit : posVariableCount) {
-        auto itNeg = std::find_if(negVariableCount.begin(), negVariableCount.end(), [&counterNeg, posLit](const auto & negLit) {
-            counterNeg = negLit.second;
-            return negLit.first == -posLit.first;
-        });
-        if (itNeg != negVariableCount.end()) {
-            if (counterNeg + posLit.second > maxScore) {
-                maxScore = counterNeg + posLit.second;
-                maxLit = posLit.first;
-                negVariableCount.erase(itNeg);
-            } else if (random && (counterNeg + posLit.second) == maxScore) {
-                randCandidates.push_back(posLit.first);
-                negVariableCount.erase(itNeg);
-            }
-        }
-    }
-
-    if (maxLit == 0) {
-        if (!posVariableCount.empty())
-            maxLit = posVariableCount.front().first;
-        else if (!negVariableCount.empty()) {
-            maxLit = -negVariableCount.front().first;
-        }
-    }
-
-    if (random && !randCandidates.empty()) {
-        const int randIndex = getRandomIndex(0, randCandidates.size());
-        maxLit = randCandidates[randIndex];
-    }
-
-    return maxLit;
-}
-
-// Selection heuristic: the Jeroslow-Wang method.
-// If randomized true, it runs the randomized J-W variant.
-int MaphSAT::selectJW(bool random) const {
-    double score = 0;
-    double maxScore = std::numeric_limits<double>::min();
-    int maxLit = 0;
-    std::vector<int> randCandidates;
-    std::vector<std::pair<int, double> > JWcount;
-
-    for (const auto & clause : formula) {
-        for (int literal : clause) {
-            if (std::find_if(trail.begin(), trail.end(), [literal](const auto & p) { return p.first == literal || p.first == -literal; }) == trail.end()) {
-                auto it = std::find_if(JWcount.begin(), JWcount.end(), [&score, literal](const auto & p) {
-                    score = p.second;
-                    return p.first == literal || p.first == -literal;
-                });
-                if (it == JWcount.end()) {
-                    double initialScore = std::pow(2.0, -clause.size());
-                    JWcount.emplace_back(literal, initialScore);
-                    if (initialScore > maxScore) {
-                        maxScore = initialScore;
-                        maxLit = literal;
-                    } else if (random && initialScore == maxScore)
-                        randCandidates.push_back(literal);
-                } else {
-                    JWcount.erase(it);
-                    score = score + pow(2.0, -clause.size());
-                    JWcount.emplace_back(literal, score);
-                    if (score > maxScore) {
-                        maxScore = score;
-                        maxLit = literal;
-                    } else if (random && score == maxScore)
-                        randCandidates.push_back(literal);
-                }
-            }
-        }
-    }
-
-    if (maxLit != 0) {
-        if (random && !randCandidates.empty()) {
-            const int randIndex = getRandomIndex(0, randCandidates.size());
-            maxLit = randCandidates[randIndex];
-        }
-        if (maxLit > 0)
-            return maxLit;
-        else
-            return -maxLit;
-    }
-
-    return 0;
-}
-
-// Selection heuristic: Maximum [number of] Occurrences in Minimum [length] Clauses.
-// If randomized true, it runs the randomized MOMS variant.
-int MaphSAT::selectMOMS(bool random) const {
-    int maxLit = 0;
-    int counterNeg = 0;
-    int maxScore = 0;
-    int parameter = 10; // as suggested in: J. Freeman, “Improvements to propositional satisfiability search algorithms” , PhD thesis, The University of Pennsylvania, 1995.
-    int cutoffLength = 0;
-    std::size_t totalClauseLength = 0;
-    std::vector<int> randCandidates;
-    std::vector<std::pair<int, int> > posVariableCount;
-    std::vector<std::pair<int, int> > negVariableCount;
-
-    for (const auto & clause : formula)
-        totalClauseLength += clause.size();
-
-    cutoffLength = totalClauseLength / formula.size();
-    if (cutoffLength >= 2)
-        --cutoffLength;
-
-    combinedSum(posVariableCount, negVariableCount, true, cutoffLength);
-
-    for (auto & posLit : posVariableCount) {
-        auto itNeg = std::find_if(negVariableCount.begin(), negVariableCount.end(), [&counterNeg, posLit](const auto & negLit) {
-            counterNeg = negLit.second;
-            return negLit.first == -posLit.first;
-        });
-        if (itNeg != negVariableCount.end()) {
-            const int tempScore = (counterNeg + posLit.second) * std::pow(2, parameter) + (counterNeg * posLit.second);
-            if (tempScore > maxScore) {
-                maxScore = tempScore;
-                maxLit = posLit.first;
-                negVariableCount.erase(itNeg);
-            } else if (random && tempScore == maxScore) {
-                randCandidates.push_back(posLit.first);
-            }
-        }
-    }
-
-    if (maxLit == 0)
-        maxLit = selectFirst();
-    if (random && !randCandidates.empty()) {
-        const int randIndex = getRandomIndex(0, randCandidates.size());
-        maxLit = randCandidates[randIndex];
-    }
-
-    return maxLit;
-}
 
 // Elimiate pure literals.
 void MaphSAT::pureLiteral() {
     std::vector<int> trackLiterals; // keep track of literals occurring with unique polarity
     std::vector<int> erasedLiterals; // keep track of the erased literals
+    trackLiterals.reserve(numberVariables*2);
+    erasedLiterals.reserve(numberVariables*2);
+
     for (const auto & clause : formula) {
         for (int literal : clause) {
 
@@ -304,14 +22,14 @@ void MaphSAT::pureLiteral() {
                 auto it = std::find_if(trackLiterals.begin(), trackLiterals.end(), [&](const auto & lit) {
                     return lit == -literal;
                 });
-                auto duplicate = std::find_if(trackLiterals.begin(), trackLiterals.end(), [&](const auto & lit) {
-                    return lit == literal;
-                });
                 auto erased = std::find_if(erasedLiterals.begin(), erasedLiterals.end(), [&](const auto & lit) {
                     return lit == literal || lit == -literal;
                 });
-                if (it == trackLiterals.end() && duplicate == trackLiterals.end() && erased == erasedLiterals.end()) {
+                if (it == trackLiterals.end() && erased == erasedLiterals.end()) {
                     trackLiterals.push_back(literal);
+                    std::sort(trackLiterals.begin(), trackLiterals.end());
+                    auto pairs = unique(trackLiterals.begin(), trackLiterals.end()); // this seems to be faster than erase(unique ...); tested w.r.t. CPU time
+                    trackLiterals.erase(pairs, trackLiterals.end());
                 }
                 else if (it != trackLiterals.end()) {
                     erasedLiterals.push_back(literal);
@@ -323,8 +41,105 @@ void MaphSAT::pureLiteral() {
     if (!trackLiterals.empty()) {
         for (const auto & lit : trackLiterals) {
             assertLiteral(lit, true);
+            #ifdef DEBUG
+            std::cout << "Pure literal: "<< lit << '\n';
+            #endif
         }
         trackLiterals.clear();
+        erasedLiterals.clear();
+    }
+}
+
+// Helper for sorting the VSIDSvec.
+void MaphSAT::sortVSIDSvec() {
+    std::sort(VSIDSvec.begin(), VSIDSvec.end()); // sort only when updating scores
+    auto pairs = unique(VSIDSvec.begin(), VSIDSvec.end());
+    VSIDSvec.erase(pairs, VSIDSvec.end());
+    std::sort(VSIDSvec.begin(), VSIDSvec.end(), [](auto &pair1, auto &pair2) {
+        return pair1.second > pair2.second; //sort by score in descending order
+    });
+}
+
+// EVSIDS branching heuristic.
+int MaphSAT::selectEVSIDS() {
+    int maxLit = 0;
+
+    for (size_t i = 0; i < VSIDSvec.size(); ++i) {
+        auto it = std::find_if(trail.begin(), trail.end(), [&](const auto & lit) { //check that the literal is not in the trail
+            return lit.first == VSIDSvec[i].first || lit.first == -VSIDSvec[i].first;
+        });
+        if (it == trail.end()) { //pick the literal with the highest score
+            maxLit = VSIDSvec[i].first;
+            break;
+        }
+    }
+
+    #ifdef DEBUG
+    std::cout << "\nmaxLit: " << maxLit << '\n';
+    #endif
+
+    return maxLit;
+}
+
+// VSIDS branching heuristic
+int MaphSAT::selectVSIDS() {
+    int maxLit = 0;
+
+    for (size_t i = 0; i < VSIDSvec.size(); ++i) {
+        auto it = std::find_if(trail.begin(), trail.end(), [&](const auto & lit) { //check that the literal is not in the trail
+            return lit.first == VSIDSvec[i].first || lit.first == -VSIDSvec[i].first;
+        });
+        if (it == trail.end()) { //pick the literal with the highest score
+            maxLit = VSIDSvec[i].first;
+        }
+        if (maxLit != 0 && VSIDSinterval != 256) {
+            break;
+        }
+        else if (VSIDSinterval == 256) { // decay by 20% (initially)
+            if (VSIDScounter >= 2000 && decay > 0) { // update the decay factor periodically; similar technique implemented in Glucose
+                VSIDScounter = 0;
+                decay -= 0.15; // decrement the decay factor
+            }
+           VSIDSvec[i].second *= decay;
+       }
+    }
+
+    if (VSIDSinterval >= 256) { // interval used in GRASP
+        VSIDSinterval = 0;
+    }
+
+    #ifdef DEBUG
+    std::cout << "\nmaxLit: " << maxLit << '\n';
+    #endif
+
+    return maxLit;
+}
+
+// Remove tautologies from the formula. Right now, it leads to contradiction (in rare cases).
+// We should come back to it once we have proper clause deletion strategies.
+void MaphSAT::removeTautologies() {
+    for (const auto & clause : formula) {
+        for (int literal : clause) {
+            auto it = std::find_if(clause.begin(), clause.end(), [&](const auto & lit) { //check that the literal is not in the trail
+                return lit == -literal;
+            });
+            if (it != clause.end()) {
+                auto trailIt = std::find_if(trail.begin(), trail.end(), [&](const auto & lit){
+                    return lit.first == -literal;
+                });
+                if (trailIt == trail.end()) {
+                    assertLiteral(literal, true);
+                    std::cout << "Asserted " << literal << '\n';
+                    #ifdef DEBUG
+                    std::cout << "Found tautology in clause: ";
+                    for (int lit : clause) {
+                        std::cout << lit << ' ';
+                    }
+                    std::cout << '\n';
+                    #endif
+                }
+            }
+        }
     }
 }
 
@@ -338,38 +153,19 @@ void MaphSAT::assertLiteral(int literal, bool decision) {
 void MaphSAT::applyDecide() {
     int literal = 0;
 
-    switch (heuristic) {
-    case MaphSAT::Heuristic::FIRST:
-        literal = selectFirst();
+    literal = selectEVSIDS();
+
+    /*switch (heuristic) {
+    case MaphSAT::Heuristic::VSIDS:
+        literal = selectVSIDS();
         break;
-    case MaphSAT::Heuristic::RANDOM:
-        literal = selectRandom();
+    case MaphSAT::Heuristic::EVSIDS:
+        literal = selectEVSIDS(false);
         break;
-    case MaphSAT::Heuristic::DLIS:
-        literal = selectDLIS(false);
+    case MaphSAT::Heuristic::WEVSIDS:
+        literal = selectEVSIDS(true);
         break;
-    case MaphSAT::Heuristic::RDLIS:
-        literal = selectDLIS(true);
-        break;
-    case MaphSAT::Heuristic::DLCS:
-        literal = selectDLCS(false);
-        break;
-    case MaphSAT::Heuristic::RDLCS:
-        literal = selectDLCS(true);
-        break;
-    case MaphSAT::Heuristic::JW:
-        literal = selectJW(false);
-        break;
-    case MaphSAT::Heuristic::RJW:
-        literal = selectJW(true);
-        break;
-    case MaphSAT::Heuristic::MOMS:
-        literal = selectMOMS(false);
-        break;
-    case MaphSAT::Heuristic::RMOMS:
-        literal = selectMOMS(true);
-        break;
-    }
+    }*/
 
     if (literal == 0)
         return;
@@ -439,7 +235,8 @@ void MaphSAT::applyExplain(int literal) {
     backjumpClause.erase(std::remove(backjumpClause.begin(), backjumpClause.end(), literal), backjumpClause.end());
     backjumpClause.erase(std::remove(backjumpClause.begin(), backjumpClause.end(), -literal), backjumpClause.end());
     std::sort(backjumpClause.begin(), backjumpClause.end());
-    backjumpClause.erase(std::unique(backjumpClause.begin(), backjumpClause.end()), backjumpClause.end());
+    auto pairs = unique(backjumpClause.begin(), backjumpClause.end());
+    backjumpClause.erase(pairs, backjumpClause.end());
 }
 
 // Construct the backjump clause by repeatedly explaining a literal that lead to a
@@ -452,9 +249,14 @@ void MaphSAT::applyExplainUIP() {
 // Add a learned clause to the formula to prevent the same conflict from happening again.
 void MaphSAT::applyLearn() {
     formula.push_back(backjumpClause);
+
     // Add the clause to the watch list.
     watchList[backjumpClause[0]].push_back(formula.size() - 1);
     watchList[backjumpClause[1]].push_back(formula.size() - 1);
+
+    if (proofLogging) { // Add the clause to the proof log.
+        proofClauses.push_back(backjumpClause);
+    }
 }
 
 // Return an iterator to the first literal in the trail that has a decision level greater than 'level'.
@@ -504,6 +306,7 @@ void MaphSAT::applyBackjump() {
     unitQueue.clear();
     unitQueue.push_front(-literal);
     reason[-literal] = formula.size() - 1;
+    VSIDScounter++;
 }
 
  // Notify clauses that a literal has been asserted.
@@ -550,23 +353,129 @@ void MaphSAT::notifyWatches(int literal) {
         newWL.push_back(clauseIndex);
         if (std::find_if(trail.begin(), trail.end(), [&clause](const auto & p) { return p.first == -clause[0]; }) != trail.end()) {
             conflict = true;
+            ++numberConflicts;
+            ++VSIDSinterval;
             backjumpClause.clear();
-            for (int literal : clause)
+
+            for (const int literal : clause) {
                 backjumpClause.push_back(literal);
+                auto it = std::find_if(VSIDSvec.begin(), VSIDSvec.end(), [&](const auto & lit){
+                    return lit.first == literal;
+                });
+                ++it->second;
+            }
+            // switch is too slow here
+            /*for (size_t i = 0; i < backjumpClause.size(); ++i) { // weighted EVSIDS
+                for (size_t j = 0; j < VSIDSvec.size(); ++j) {
+                    if (VSIDSvec[j].first == backjumpClause[i]) {
+                        //++VSIDSvec[j].second;
+                        if (i == backjumpClause.size() - 1) {
+                            VSIDSvec[j].second += 0.5*pow(5, numberConflicts);
+                        }
+                        else {
+                            VSIDSvec[j].second += (1-((i+1)/10000))*pow(5, numberConflicts);
+                        }
+                        break;
+                    }
+                }
+            }*/
+            sortVSIDSvec(); // sort only when updating scores
         } else if (std::find(unitQueue.begin(), unitQueue.end(), clause[0]) == unitQueue.end()) {
             // If the first watched literal is not falsified, it is a unit literal.
             unitQueue.push_front(clause[0]);
             reason[clause[0]] = clauseIndex;
         }
     }
-
     watchList[literal] = newWL;
 }
 
+// A geometric policy used in MiniSat v1.14.
+// Initial restart interval: 100 conflicts.
+// Increase: factor of 1.5 after each restart.
+// Set restartLimit to 100 in .hpp.
+void MaphSAT::restartPolicy100() {
+    if (numberConflicts >= restartLimit) {
+        numberConflicts = 0;
+        restartLimit *= 1.5;
+        removePast(0);
+    }
+}
+
+// Fixed-restart interval policy.
+void MaphSAT::fixedRestart(int restartInterval) {
+    if (numberConflicts >= restartInterval) {
+        numberConflicts = 0;
+        removePast(0);
+    }
+}
+
+// From https://baldur.iti.kit.edu/sat/files/2018/l06.pdf.
+// My own implementation is below (LubySequence).
+// Need to measure which is faster.
+unsigned int MaphSAT::Luby(unsigned int index) {
+    for (unsigned int k = 1; k < 32; k++) {
+        if (index == (1 << k) - 1) {
+            return 1 << (k-1);
+        }
+    }
+    for (unsigned int k = 1;;k++) {
+        if ((1 << (k-1)) <= index && index < (1 << k) - 1) {
+            return Luby(index-(1 << (k-1)) + 1);
+        }
+    }
+}
+
+/* Computes Luby's sequence: 1,1,2,1,1,2,4,1,1,2,1,1,2,4,8,...
+   Recursive definition:
+   if i=2ˆk - 1, then t_i=2ˆ(k-1),
+   if 2ˆ(k-1) <= i < 2ˆk - 1, then t_i = t_{i-2ˆ(k-1)+1},
+   where i is a positive integer.
+   Takes an index (i).
+   Returns the ith element of the sequence (t_i). */
+int MaphSAT::LubySequence(int index) {
+    int result = 0;
+    double parameter = log2(index+1);
+    /* Because:
+       i = 2ˆparameter - 1
+       2ˆparameter = i + 1
+       parameter = log_2(i+1) */
+
+    if (index == 1) {
+        return 1;
+    }
+    if (floor(parameter) == ceil(parameter)) { // check if it's an integer
+        result = pow(2, parameter-1);
+    }
+    else if (pow(2, floor(parameter)-1) == index) { // check if 2ˆ(floor(parameter)-1)) is an integer
+            result = LubySequence(index - pow(2, floor(parameter)-1) + 1);
+    }
+    else { // it holds that 2ˆ(ceil(parameter-1)) is an integer
+        result = LubySequence(index - pow(2, ceil(parameter)-1) + 1);
+    }
+
+    return result;
+}
+
+// Restart policy based on Luby's sequence.
+// A unit interval is defined as 32 conflicts.
+// The restart intervals are thus: 32, 32, 64, 32, 32, 64, 128...
+// The choice of unit intervals based on:
+// Huang, J. (2007). The effect of restarts on the efficiency of clause learning.
+// Note: unit interval of 512 recommended in https://baldur.iti.kit.edu/sat/files/2018/l06.pdf.
+// MiniSAT uses unit intervals of 100.
+// Set restartLimit=32 in .hpp.
+void MaphSAT::restartLuby() {
+    if (numberConflicts >= restartLimit) {
+        removePast(0);
+        restartLimit = 8*LubySequence(++numberRestarts);
+        numberConflicts = 0;
+    }
+}
+
 // Parse a CNF formula and throw invalid_argument() if unsuccessful.
-MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic) :
+MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic, bool proofLogging, std::string proofName) :
     heuristic(heuristic), state(MaphSAT::State::UNDEF), numberVariables(0),
-    numberClauses(0), numberDecisions(0), conflict(false) {
+    numberClauses(0), numberDecisions(0), conflict(false), proofLogging(proofLogging), proofName(proofName) {
     // Skip optional comments and the mandatory 'p cnf' appearing at the top of the CNF formula.
     char c;
     while (stream >> c) {
@@ -588,6 +497,7 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic) :
     // Reserve memory for the clauses and the trail.
     formula.reserve(numberClauses);
     trail.reserve(numberVariables);
+    VSIDSvec.reserve(numberVariables*2); //don't know if it makes sense to reserve more space than most likely needed (?)
 
     // Parse all clauses.
     int literal;
@@ -595,13 +505,54 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic) :
     for (std::size_t i = 0; i < numberClauses; ++i) {
         while (stream >> literal) {
             if (literal == 0 && clause.size() > 1) {
-                // Add the clause to the formula.
-                formula.push_back(clause);
-                // Add the clause to the watch list.
-                watchList[clause[0]].push_back(formula.size() - 1);
-                watchList[clause[1]].push_back(formula.size() - 1);
-                clause.clear();
-                break;
+                std::sort(clause.begin(), clause.end());
+                #ifdef DEBUG
+                bool subsumed = false;
+                #endif
+                // experimental: I tried to remove duplicate clauses and (backward)-subsumed clauses at the same time
+                auto it = std::find_if(formula.begin(), formula.end(), [&](const auto & formulaClause) {
+                    if (clause == formulaClause) { // check for duplicates
+                        return true;
+                    }
+
+                    for (int lit : clause) { // check for subsumption
+                        if (std::find(formulaClause.begin(), formulaClause.end(), lit) == formulaClause.end()) {
+                            return false;
+                        }
+                    }
+                    #ifdef DEBUG
+                    subsumed = true;
+                    #endif
+
+                    return true;
+                });
+                if (it == formula.end()) {
+                    formula.push_back(clause);
+                    watchList[clause[0]].push_back(formula.size() - 1);
+                    watchList[clause[1]].push_back(formula.size() - 1);
+                    for (int literal : clause) {
+                        VSIDSvec.push_back(std::make_pair(literal, 0)); //initialize the VSIDS vector
+                    }
+                    clause.clear();
+                    break;
+                }
+                else {
+                    clause.clear(); // don't insert the clause if duplicate/subsumption case
+                    break;
+
+                    #ifdef DEBUG
+                    if (subsumed) {
+                        std::cout << "Found subsumed clause: ";
+                    }
+                    else {
+                    std::cout << "Found duplicate: ";
+                    }
+                    for (int lit : clause) {
+                        std::cout << lit << ' ';
+                    }
+                    std::cout << '\n';
+                    #endif
+                }
             } else if (literal == 0 && clause.size() == 1) {
                 unitQueue.push_front(clause[0]);
                 clause.clear();
@@ -612,6 +563,24 @@ MaphSAT::MaphSAT(std::istream & stream, MaphSAT::Heuristic heuristic) :
         }
         if (stream.fail())
             throw std::invalid_argument("Error parsing DIMACS.");
+    }
+    /* If there are any variables that don't appear in the formula (but are
+       specified in the 'numberVariables' argument), put them in the trail.
+       Default assignment: true.
+     */
+    auto maxPair = *std::max_element(VSIDSvec.begin(), VSIDSvec.end(),
+                      [](const std::pair<int, double> &pair1, const std::pair<int, double> &pair2) {
+                         return abs(pair1.first) > abs(pair2.first);
+                     });
+    int maxQueue = abs(*std::max_element(unitQueue.begin(), unitQueue.end()));
+    int maxVariable = maxPair.first;
+    if (maxQueue > maxVariable) {
+        maxVariable = maxQueue;
+    }
+    if (maxVariable < static_cast<int>(numberVariables)) {
+        for (int i = maxVariable + 1; i <= static_cast<int>(numberVariables); i++) {
+            assertLiteral(i, true);
+        }
     }
 }
 
@@ -627,12 +596,16 @@ bool MaphSAT::solve() {
         }
     }
 
+    //removeTautologies(); // only in the preprocessing stage; doesn't work for now
+
+    applyUnitPropagate(); // before we can apply pureLiteral(), we have to call applyUnitPropagate() [cf. the case with unit.cnf if this line is uncommented]
+    pureLiteral(); // eliminate pure literals only in the preprocessing stage [considerable speedup]
+
     // Until the formula is satisfiable or unsatisfiable, the state of the solver is undefined.
     while (state == MaphSAT::State::UNDEF) {
+
         // Assert any unit literals.
         applyUnitPropagate();
-        // Eliminate pure literals. It slowed out solver down so we uncommented it.
-        // pureLiteral();
         // Do the current assignments lead to a conflict?
         if (conflict) {
             // Can we backtrack to resolve the conflict?
@@ -646,11 +619,35 @@ bool MaphSAT::solve() {
         } else {
             // Does every variable have an assignment? If that is the case, we are done.
             // Otherwise assign a value to a variable that has no assignment yet.
-            if (trail.size() == numberVariables)
+            if (trail.size() == numberVariables) {
                 state = MaphSAT::State::SAT;
-            else
+
+                #ifdef DEBUG
+                if (verify()) {
+                    std::cout << "\nVerifier: OK\n";
+                }
+                else {
+                    std::cout << "\nVerifier: FAIL\n";
+                }
+                #endif
+            }
+            else {
+                restartLuby();
                 applyDecide();
+            }
         }
+    }
+
+    if (proofLogging) { // write proof to file
+        std::ofstream file;
+        file.open(proofName + "_proofLog.txt");
+        for (const auto & clause : proofClauses) {
+            for (int lit : clause) {
+                file << lit << ' ';
+            }
+            file << "0\n";
+        }
+        file.close();
     }
 
     // If the formula is satisfiable, the trail represents the satisfying assignment.
@@ -667,6 +664,30 @@ bool MaphSAT::solve() {
     return false;
 }
 
+// Verifier used to check satisfiable cases.
+// Checks that every clause contains a literal that is true in the assignment trail.
+// Returns true if the variable assignment is correct, false otherwise.
+bool MaphSAT::verify() {
+    bool clauseValid; // flag for checking the validity of every clause
+
+    for (auto const & clause : formula) {
+        clauseValid = false; // reset the flag for the next clause
+        for (auto const literal : clause) {
+            auto it = std::find_if(trail.begin(), trail.end(), [literal] (const auto & lit) {
+                return literal == lit.first;
+            });
+            if (it != trail.end()) {
+                clauseValid = true;
+                break;
+            }
+        }
+        if (!clauseValid){
+            return false;
+        }
+    }
+    return true;
+}
+
 // Print the current state of the SAT solver.
 std::ostream & operator<<(std::ostream & out, const MaphSAT & maph) {
     switch (maph.state) {
@@ -675,10 +696,12 @@ std::ostream & operator<<(std::ostream & out, const MaphSAT & maph) {
         break;
     case MaphSAT::State::SAT:
         out << "s SATISFIABLE\n";
+        //out << "S";
         // to use the runTests.py script, change the output to "SAT"
         break;
     case MaphSAT::State::UNSAT:
         out << "s UNSATISFIABLE\n";
+        //out << "U";
         // to use the runTests.py script, change the output to "UNSAT"
         break;
     }
@@ -688,6 +711,7 @@ std::ostream & operator<<(std::ostream & out, const MaphSAT & maph) {
         out << "v ";
         for (const auto & literal : maph.trail)
             out << literal.first << ' ';
+        out << "0\n";
     }
 
     return out;

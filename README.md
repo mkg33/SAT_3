@@ -30,10 +30,11 @@ I'll post the full results soon.</del> It's promising that VSIDS actually outper
 
 TODO:
 
-* clause deletion strategy (P)
+* clause deletion strategy (P) :white_check_mark:
 * VSIDS / VMTF branching heuristic (M) :white_check_mark:
-* phase saving (P)
+* phase saving (P) :white_check_mark:
 * restarts + different restart policies (M) :white_check_mark:
 * preprocessing techniques (M) :white_check_mark: [might add more]
 * proof logging in DRUP (or DRAT) format (M) :white_check_mark:
-* tests + cactus plots (M)
+* tests + cactus plots (M) :white_check_mark:
+
